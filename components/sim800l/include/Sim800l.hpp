@@ -3,7 +3,7 @@
 #include <iostream>
 #include <initializer_list>
 
-#define SIM800L_DEF_BUF_SIZE         120
+#define SIM800L_DEF_BUF_SIZE         240
 
 typedef enum {
 	Sim800lOk = 0,

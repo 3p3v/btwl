@@ -73,12 +73,15 @@ Sim800lError Sim800l::writeHTTPDATA(const int size, const int time, const char *
    sprintf(size_str, "%i", (int)size);
    sprintf(time_str, "%i", (int)time);
 
-   if(sendAT("HTTPDATA", {size_str, time_str}) == Sim800lOk) {
+   sendAT("HTTPDATA", {size_str, time_str});
       simDelay(100);
-      return sendData(inputData);
-   }
-   else 
-      return Sim800lErr;
+      if(sendData(inputData) != Sim800lOk)
+         return Sim800lErr;
+
+      if(receiveData() <= 0)
+         return Sim800lErr;
+
+   return Sim800lErr;
 }
 
 /*  AT+HTTPACTION HTTP Method Action

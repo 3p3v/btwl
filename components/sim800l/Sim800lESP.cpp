@@ -7,8 +7,14 @@
 
 static QueueHandle_t sim800l_queue;
 
-Sim800lESP::Sim800lESP(uart_config_t & uartConf, const char * url) 
-    : Sim800lBB(url){
+//TODO delete config from constructor
+Sim800lESP::Sim800lESP(const uart_config_t uartConf, const char * url) 
+    : Sim800lBB(url), tx(SIM800L_DEF_UART_TX), rx(SIM800L_DEF_UART_RX), uart(SIM800L_DEF_UART_NUM) {
+    this->uartConf = uartConf;
+}
+
+Sim800lESP::Sim800lESP(int tx, int rx, uart_port_t uart, const uart_config_t uartConf, const char *url)
+    : Sim800lBB(url), tx(tx), rx(rx), uart(uart) {
     this->uartConf = uartConf;
 }
 
@@ -17,10 +23,11 @@ Sim800lESP::~Sim800lESP() {}
 //TODO
 Sim800lError Sim800lESP::init()
 {
-    uart_driver_install(SIM800L_DEF_UART_NUM, SIM800L_DEF_BUF_SIZE * 2, SIM800L_DEF_BUF_SIZE * 2, 0, NULL, 0);
-    uart_param_config(SIM800L_DEF_UART_NUM, &uartConf);
-    uart_set_pin(SIM800L_DEF_UART_NUM, SIM800L_DEF_UART_TX, SIM800L_DEF_UART_RX, UART_PIN_NO_CHANGE ,UART_PIN_NO_CHANGE);
-    // uart_enable_pattern_det_baud_intr(SIM800L_DEF_UART_NUM, '\n', )  //TODO
+    uart_driver_install(uart, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_QUEUE_SIZE, &uartQueue, 0);
+    uart_param_config(uart, &uartConf);
+    uart_set_pin(uart, tx, rx, UART_PIN_NO_CHANGE ,UART_PIN_NO_CHANGE);
+    uart_enable_pattern_det_baud_intr(uart, '\n', 1, SIM800L_PATTERN_INTERVAL, SIM800L_MIN_POST_IDLE, SIM800L_MIN_PRE_IDLE);
+    uart_pattern_queue_reset(uart_port, SIM800L_DEF_PATTERN_QUEUE_SIZE);
 
     return Sim800lOk;
 }
@@ -28,18 +35,20 @@ Sim800lError Sim800lESP::init()
 //TODO
 Sim800lError Sim800lESP::sendData(const char *data)
 {
-    int len = uart_write_bytes(SIM800L_DEF_UART_NUM, data, strlen(data));
-    uart_wait_tx_done(SIM800L_DEF_UART_NUM, 100);
+    int len = uart_write_bytes(uart, data, strlen(data));
+    // uart_wait_tx_done(uart, 100);
     return Sim800lOk;
 }
 
 //TODO
 int Sim800lESP::receiveData()
 {
+    
+    
     memset(receivedData, '\0', SIM800L_DEF_BUF_SIZE);
     receivedLen = 0;
 
-    receivedLen = uart_read_bytes(SIM800L_DEF_UART_NUM, (unsigned char*)receivedData, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_DOWNLOAD_TIME / portTICK_PERIOD_MS);
+    receivedLen = uart_read_bytes(uart, (unsigned char*)receivedData, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_DOWNLOAD_TIME / portTICK_PERIOD_MS);
 
     if(receivedLen > 0)
         return receivedLen;

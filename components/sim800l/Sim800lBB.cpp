@@ -41,8 +41,8 @@ Sim800lError Sim800lBB::sendHTTPPOST(const char *url, const char * data)
     execHTTPINIT();
     writeHTTPPARA("CID", 1);
     writeHTTPPARA("URL", url);
-    writeHTTPPARA("CONTENT", "application/x-www-form-urlencoded");
-    writeHTTPDATA(192, 5000, data);
+    writeHTTPPARA("CONTENT", "application/json");
+    writeHTTPDATA(strlen(data), 15000, data);
     writeHTTPACTION(1);
     execHTTPREAD();
     //TODO

@@ -39,6 +39,8 @@
         "*.tcc": "cpp",
         "cstring": "cpp",
         "*.inc": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "hmc5883l.h": "c",
+        "esp_timer.h": "c"
     }
 }

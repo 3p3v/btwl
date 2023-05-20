@@ -1,0 +1,186 @@
+/*
+ * JsonData.cpp
+ *
+ *  Created on: Apr 19, 2023
+ *      Author: esp32
+ */
+
+#include <JsonData.hpp>
+#include "freertos/FreeRTOS.h"
+#include <esp_log.h>
+#include "esp_mac.h"
+// #include <esp_err.h>
+
+JsonData::JsonData()
+	: fullStats(nullptr), parsedData(nullptr){}
+
+JsonData::~JsonData() {
+	cJSON_Delete(fullStats);
+}
+
+JsonDataErr JsonData::check(cJSON * var) {
+	if(var == NULL) {
+		return JsonDataAllErr;
+	}
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::init() {
+//	cJSON_Hooks hooks;
+//	hooks.free_fn = vPortFree;
+//	hooks.malloc_fn = pvPortMalloc;
+//	cJSON_InitHooks(&hooks);
+	esp_efuse_mac_get_default(mac);
+    // esp_read_mac(*mac_base, ESP_MAC_WIFI_STA);
+	// esp_read_mac(mac, ESP_MAC_ETH);
+	ESP_LOGI("JSON", "Got MAC");
+
+	fullStats = cJSON_CreateObject();
+	// ESP_LOGI("JSON", "Created full");
+
+	if(fullStats == NULL) {
+		// ESP_LOGI("JSON", "Deleting full");
+		cJSON_Delete(fullStats);
+		return JsonDataAllErr;
+	}
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::addEspMac() {
+	char macStr[JSON_DATA_MAC_STR_LEN * 5] = {};
+	snprintf(macStr, JSON_DATA_MAC_STR_LEN * 5, "%i:%i:%i:%i:%i:%i", (int)mac[0], (int)mac[1], (int)mac[2], (int)mac[3], (int)mac[4], (int)mac[5]);
+	cJSON *id = cJSON_CreateString(macStr);
+
+	if(id == NULL)
+		return JsonDataAllErr;
+
+	ESP_LOGI("JSON", "MAC added");
+	cJSON_AddItemToObject(fullStats, "mac", id);
+
+	return JsonDataOk;
+}
+
+//TODO
+JsonDataErr JsonData::addBatteryInfo(int err, int level)
+{
+    cJSON_AddNumberToObject(fullStats, "batteryStatus", level);
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::addTime(GpsTime time)
+{
+    int len = 0;
+	
+	char temp[JSON_DATA_TIME_LEN * 3] = {};
+	len += snprintf(temp, 7, "%i", time.hh);
+	temp[2] = ':';
+	len++;
+	len += snprintf(temp + len, 7, "%i", time.mm);
+	temp[4] = ':';
+	len++;
+	len += snprintf(temp + len, 7, "%i", time.ss);
+
+	cJSON_AddStringToObject(fullStats, "time", temp);
+
+	return JsonDataOk;
+}
+
+char *JsonData::getJsonData()
+{
+    // ESP_LOGI("JSON", "JSON parsed");
+	parsedData = cJSON_Print(fullStats);
+	return parsedData;
+}
+
+JsonDataErr JsonData::addGpsInfo(int err, GpsFloat lati, GpsFloat longi) {
+	// char latitude[JSON_DATA_LATITUDE_LEN + 1];
+	// char longitude[JSON_DATA_LONGITUDE_LEN + 1];
+	// BBFloat bb = BBFloat();
+
+	/* Changing ints to c strings */
+	// bb.floatToBBFloat(lati, MPU6050_DIGITS);
+	// bb.bbFloatToString(latitude, JSON_DATA_LATITUDE_SING_LEN, JSON_DATA_LATITUDE_NSING_LEN);
+	// cJSON *lat = cJSON_CreateString(latitude);
+
+	// bb.floatToBBFloat(longi, MPU6050_DIGITS);
+	// bb.bbFloatToString(longitude, JSON_DATA_LONGITUDE_SING_LEN, JSON_DATA_LONGITUDE_NSING_LEN);
+	// cJSON *lon = cJSON_CreateString(longitude);
+
+	// if(lat == NULL || lon == NULL)
+	// 	return JsonDataAllErr;
+
+	cJSON_AddNumberToObject(fullStats, "latitude", lati);
+	cJSON_AddNumberToObject(fullStats, "latitude", longi);
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::addAccInfo(int err, MPU6050Float x, MPU6050Float y, MPU6050Float z) {
+	// char xyz[JSON_DATA_ACC_LEN + 2];
+	// BBFloat bb = BBFloat();
+
+	// bb.floatToBBFloat(x, MPU6050_DIGITS);
+	// bb.bbFloatToString(xyz);
+	// cJSON * accX = cJSON_CreateString(xyz);
+
+	// if(accX == NULL)
+	// 	return JsonDataAllErr;
+
+	// bb.floatToBBFloat(y, MPU6050_DIGITS);
+	// bb.bbFloatToString(xyz);
+	// cJSON * accY = cJSON_CreateString(xyz);
+
+	// if(accY == NULL)
+	// 	return JsonDataAllErr;
+
+	// bb.floatToBBFloat(z, MPU6050_DIGITS);
+	// bb.bbFloatToString(xyz);
+	// cJSON * accZ = cJSON_CreateString(xyz);
+
+	// if(accZ == NULL)
+	// 	return JsonDataAllErr;
+
+	// cJSON_AddItemToObject(fullStats, "accX", accX);
+	// cJSON_AddItemToObject(fullStats, "accZ", accZ);
+	MPU6050Float ret = x;
+
+	if(y > ret)
+		ret = y;
+
+	if(z > ret)
+		ret = z;
+
+	cJSON_AddNumberToObject(fullStats, "maxAcceleration", ret);
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::addTempInfo(int err, SHT30Float temperature, SHT30Float humidity) {
+	// char data[JSON_DATA_SHT_LEN + 2] = {};
+	// BBFloat bb = BBFloat();
+
+	/* Changing ints to c strings */
+	// bb.floatToBBFloat(temperature, SHT30_TEMP_NSIGN_POINT);
+	// bb.bbFloatToString(data);
+	// cJSON * temp = cJSON_CreateString(data);
+
+	// if(temp == NULL)
+	// 	return JsonDataAllErr;
+
+	// bb.floatToBBFloat(humidity, SHT30_TEMP_NSIGN_POINT);
+	// bb.bbFloatToString(data);
+	// cJSON * hum = cJSON_CreateString(data);
+
+	// if(hum == NULL)
+	// 	return JsonDataAllErr;
+
+	cJSON_AddNumberToObject(fullStats, "temperature", temperature);
+	cJSON_AddNumberToObject(fullStats, "humidity", humidity);
+
+	return JsonDataOk;
+}
+
+
+
