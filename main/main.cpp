@@ -151,7 +151,7 @@ extern "C"{
 #endif
 void app_main(void)
 {
-    xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
+    xTaskCreatePinnedToCore(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle, 0);
     xTaskCreate(acc_task, "acc_task", 12000, NULL, 10, &acc_task_handle);
 }
 #ifdef __cplusplus

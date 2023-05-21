@@ -11,6 +11,7 @@ Sim800lBB::~Sim800lBB() {}
 
 void Sim800lBB::setDefualtUrl(const char *url)
 {
+    memset(defaultUrl, 0, SIM800L_DEF_URL_LEN);
     memcpy(defaultUrl, url, strlen(url));
 }
 
@@ -59,4 +60,23 @@ Sim800lError Sim800lBB::sendHTTPPOST(const char *url, const char * data)
 Sim800lError Sim800lBB::sendHTTPPOST(const char * data)
 {
     return sendHTTPPOST((const char *)defaultUrl, data);
+}
+
+Sim800lError Sim800lBB::sleepModeEnable()
+{
+    if(setDRT(Sim800lPinHigh) == Sim800lOk)
+        if(writeCSCLK(1) == Sim800lOk)
+            return setDRT(Sim800lPinLow);
+
+    return Sim800lErr;
+}
+
+Sim800lError Sim800lBB::sleepModeDisable()
+{
+    if(setDRT(Sim800lPinHigh) == Sim800lOk)
+        if(sendAT() == Sim800lOk)
+            if(writeCSCLK(0) == Sim800lOk)
+                return setDRT(Sim800lPinLow);
+
+    return Sim800lErr;
 }

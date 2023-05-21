@@ -3,13 +3,20 @@
 #include <iostream>
 #include <initializer_list>
 
-#define SIM800L_DEF_BUF_SIZE         240
+#define SIM800L_DEF_BUF_SIZE            240
+#define SIM800L_DEF_TX_BUF_SIZE         240
 
 typedef enum {
 	Sim800lOk = 0,
 	Sim800lErr = -1,
-    Sim800lRecErr = -2
+    Sim800lRecErr = -2,
+    Sim800lBufferFullErr = -3
 } Sim800lError;
+
+typedef enum {
+    Sim800lPinLow = 0,
+    Sim800lPinHigh = 1
+} Sim800lPin;
 
 class Sim800l {
 public:
@@ -55,6 +62,15 @@ public:
 
     /* AT+HTTPTERM Terminate HTTP Service */
     virtual Sim800lError execHTTPTERM() final;
+
+    /* AT+CSCLK Configure Slow Clock */
+    virtual Sim800lError writeCSCLK(const unsigned char n) final;
+
+    /* Set DRT pin high/low */
+    virtual Sim800lError setDRT(Sim800lPin set);
+
+    /* Set RST pin high/low */
+    virtual Sim800lError setRST(Sim800lPin set);
 
 protected:
     // virtual Sim800lError sendData(const char * data, int len);

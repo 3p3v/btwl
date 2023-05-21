@@ -1,5 +1,7 @@
 #include "Sim800l.hpp"
 
+#define SIM800L_DEF_URL_LEN 100
+
 /* Wrapper; virtual class specyfying commands */
 class Sim800lBB : protected Sim800l {
 public:
@@ -37,8 +39,18 @@ public:
     virtual Sim800lError sendHTTPPOST(const char * url, const char * data) final;
     virtual Sim800lError sendHTTPPOST(const char * data) final;
 
+    /* Enable sleep mode 1 */
+    virtual Sim800lError sleepModeEnable() final;
+    /* Disable sleep mode 1 */
+    virtual Sim800lError sleepModeDisable() final;
+
+    /* Flight mode ?? */
+    virtual Sim800lError flightMode() final;
+    /* Reset */
+    virtual Sim800lError reset() final;
+
 protected:
-    char * defaultUrl[50]; 
+    char * defaultUrl[SIM800L_DEF_URL_LEN]; 
 
 
 

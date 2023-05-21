@@ -41,6 +41,7 @@
         "*.inc": "cpp",
         "string": "cpp",
         "hmc5883l.h": "c",
-        "esp_timer.h": "c"
+        "esp_timer.h": "c",
+        "set": "cpp"
     }
 }

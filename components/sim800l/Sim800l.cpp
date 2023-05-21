@@ -112,6 +112,19 @@ Sim800lError Sim800l::execHTTPTERM() {
    return sendAT("HTTPTERM");
 }
 
+Sim800lError Sim800l::writeCSCLK(const unsigned char n) {
+   return sendAT("CSCLK", {n});
+}
+
+Sim800lError Sim800l::setDRT(Sim800lPin set)
+{
+   return Sim800lError();
+}
+
+Sim800lError Sim800l::setRST(Sim800lPin set)
+{
+   return Sim800lError();
+}
 
 // Sim800lError sendData(const char *data, int len);
 Sim800lError Sim800l::sendData(const char *data) {
