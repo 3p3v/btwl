@@ -9,4 +9,6 @@ idf_component_register(SRCS "main.cpp"
                              MPU6050
                              MPU6050Parser
                              SHT30
-                             jsonData)
+                             jsonData
+                             lid
+                             boxMessage)

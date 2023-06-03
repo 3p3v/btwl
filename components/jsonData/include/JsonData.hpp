@@ -11,6 +11,7 @@
 #include "gps.hpp"
 #include "MPU6050Parser.hpp"
 #include "SHT30.hpp"
+#include "Message.hpp"
 
 #define JSON_DATA_MAC_LEN				6
 #define JSON_DATA_MAC_STR_LEN			17
@@ -36,7 +37,8 @@
 
 typedef enum {
 	JsonDataOk = 0,
-	JsonDataAllErr = 1
+	JsonDataAllErr = 1,
+	JsonDataError = 2
 } JsonDataErr;
 
 class JsonData final{
@@ -45,6 +47,9 @@ public:
 	virtual ~JsonData();
 
 	JsonDataErr init();
+
+	JsonDataErr initNewMessage();
+	JsonDataErr deinitNewMessage();
 
 	/* Add ESP Id */
 	JsonDataErr addEspMac();
@@ -67,13 +72,25 @@ public:
 
 	JsonDataErr addTime(GpsTime time);
 
+	JsonDataErr addMessage(Message time);
+
 	/* Parse and return a pointer to data */
 	char* getJsonData();
+
+	JsonDataErr update(char * raw);
+	bool getProtect();
+	bool getOpen();
+	bool getAck();
 
 private:
 	cJSON * fullStats;
 	char * parsedData;
 	unsigned char mac[JSON_DATA_MAC_LEN];
+	bool protect;
+	bool open;
+	bool ack;
+
+	float roundUp(const double var, const int cut);
 
 	JsonDataErr check(cJSON * var);
 };

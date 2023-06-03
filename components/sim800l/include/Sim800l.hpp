@@ -10,7 +10,13 @@ typedef enum {
 	Sim800lOk = 0,
 	Sim800lErr = -1,
     Sim800lRecErr = -2,
-    Sim800lBufferFullErr = -3
+    Sim800lBufferFullErr = -3,
+    Sim800lHardwareErr = -4,
+    Sim800lTimeoutErr = -5,
+    Sim800lRespErr = -6,
+    Sim800lRegistered = -7,
+    Sim800lRoamingRegistered = -8,
+    sim800lServerErr = -9
 } Sim800lError;
 
 typedef enum {
@@ -29,17 +35,17 @@ public:
     // virtual Sim800lError execCSQ(int & rssi, int & ber) final;
 
     /* AT+CCID Show ICCID */
-    // virtual Sim800lError execCCID(char * ccid) final;
+    virtual Sim800lError execCCID() final;
 
     /* AT+CREG Network Registration */
-    // virtual Sim800lError readCREG(unsigned char & n, int & stat) final;
+    virtual Sim800lError readCREG() final;
 
     /* AT+SAPBR Bearer Settings for Applications Based on IP */
     virtual Sim800lError writeSAPBR(const unsigned char cmd_type, const unsigned char cid, const char * ConParamTag, const char * ConParamValue) final;
     virtual Sim800lError writeSAPBR(unsigned char cmd_type, unsigned char cid) final;
 
     /* AT+HTTPINIT Initialize HTTP Service  */
-    virtual int execHTTPINIT() final;
+    virtual Sim800lError execHTTPINIT() final;
 
     /* AT+HTTPPARA Set HTTP Parameters Value */
     virtual Sim800lError writeHTTPPARA(const char * HTTPParamTag, const int HTTPParamValue) final;
@@ -66,11 +72,17 @@ public:
     /* AT+CSCLK Configure Slow Clock */
     virtual Sim800lError writeCSCLK(const unsigned char n) final;
 
+    /* AT+CFUN Set Phone Functionality */
+    virtual Sim800lError writeCFUN(const unsigned char fun) final;
+    
     /* Set DRT pin high/low */
     virtual Sim800lError setDRT(Sim800lPin set);
 
     /* Set RST pin high/low */
     virtual Sim800lError setRST(Sim800lPin set);
+
+    /* AT+CPOWD Power off */
+    virtual Sim800lError writeCPOWD(const unsigned char n) final;
 
 protected:
     // virtual Sim800lError sendData(const char * data, int len);

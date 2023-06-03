@@ -40,9 +40,9 @@ Sim800lError Sim800lESP::init()
 	};
 
     /* Basic UART config */
-    uart_driver_install(uart, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_QUEUE_SIZE, &uartQueue, 0);
-    uart_param_config(uart, &uartConf);
-    uart_set_pin(uart, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    ESP_ERROR_CHECK(uart_driver_install(uart, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_QUEUE_SIZE, &uartQueue, 0));
+    ESP_ERROR_CHECK(uart_param_config(uart, &uartConf));
+    ESP_ERROR_CHECK(uart_set_pin(uart, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     /* Pattern detection event config */
     // uart_enable_pattern_det_baud_intr(uart, '\n', 1, SIM800L_PATTERN_INTERVAL, SIM800L_MIN_POST_IDLE, SIM800L_MIN_PRE_IDLE);
@@ -50,21 +50,38 @@ Sim800lError Sim800lESP::init()
 
     /* GPIO */
     gpio_config_t gpioConf = {
-        .pin_bit_mask = 0 << drt;
-        .mode = GPIO_MODE_OUTPUT;
-        .pull_up_en = GPIO_PULLUP_DISABLE;
-        .pull_down_en = GPIO_PULLDOWN_DISABLE;
-        .intr_type = GPIO_INTR_DISABLE;
+        .pin_bit_mask = (uint64_t)((1 << drt) | (1 << rst)),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
     };
 
-    /* Set DRT pin */
-    gpio_config(gpioConf);
+    /* Set DRT and RST pin */
+    ESP_ERROR_CHECK(gpio_config(&gpioConf));
 
-    /* Set RST pin */
-    gpioConf.pin_bit_mask = 0 << rst;
-    gpio_config(gpioConf);
+    resetForce();
+
+    setStatus(Sim800lUARTInitialised);
 
     return Sim800lOk;
+}
+
+Sim800lError Sim800lESP::deinit()
+{
+    resetStatus(Sim800lUARTInitialised);
+    if(uart_driver_delete(uart) == ESP_OK)
+        return Sim800lOk;
+    else
+        return Sim800lHardwareErr;
+}
+
+Sim800lError Sim800lESP::reinit()
+{
+    if(deinit() == Sim800lOk)
+        return init();
+    else    
+        return Sim800lErr;
 }
 
 /* Send data to SIM800l */
@@ -79,8 +96,10 @@ Sim800lError Sim800lESP::sendData(const char *data)
 
     if (len > 0)
         return Sim800lOk;
-    else
+    else if (len == 0)
         return Sim800lErr;
+    else 
+        return Sim800lHardwareErr;
 }
 
 /*  Receive data from SIM800l using ESP interrupts.
@@ -93,10 +112,7 @@ int Sim800lESP::receiveData()
     uart_event_t event;
     size_t buffered_size;
     int startTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    // uint8_t* receivedData = (uint8_t*) malloc(RD_BUF_SIZE);
 
-    // ESP_LOGI(TAG, "test");
-    // Waiting for UART event.
     while(((xTaskGetTickCount() * portTICK_PERIOD_MS) - startTime) < SIM800L_DEF_DOWNLOAD_TIME) {
         if (xQueueReceive(uartQueue, (void *)&event, SIM800L_DEF_DOWNLOAD_TIME / portTICK_PERIOD_MS))
         {
@@ -109,7 +125,12 @@ int Sim800lESP::receiveData()
                 ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
                 int len = uart_read_bytes(uart, receivedData, event.size, portMAX_DELAY);
                 printf("%s", receivedData);
-                return len;
+                if (len > 0)
+                    return len;
+                else if (len == 0) 
+                    return Sim800lErr;
+                else 
+                    return Sim800lHardwareErr;
                 break;
             }
             // Event of HW FIFO overflow detected
@@ -150,19 +171,19 @@ int Sim800lESP::receiveData()
                 uart_get_buffered_data_len(uart, &buffered_size);
                 int pos = uart_pattern_pop_pos(uart);
                 ESP_LOGI(TAG, "[UART PATTERN DETECTED] pos: %d, buffered size: %d", pos, buffered_size);
-                if (pos == -1)
-                {
-                    uart_flush_input(uart);
-                }
-                else
-                {
-                    uart_read_bytes(uart, receivedData, pos, 100 / portTICK_PERIOD_MS);
-                    uint8_t pat[PATTERN_CHR_NUM + 1];
-                    memset(pat, 0, sizeof(pat));
-                    uart_read_bytes(uart, pat, PATTERN_CHR_NUM, 100 / portTICK_PERIOD_MS);
-                    ESP_LOGI(TAG, "read data: %s", receivedData);
-                    ESP_LOGI(TAG, "read pat : %s", pat);
-                }
+                // if (pos == -1)
+                // {
+                //     uart_flush_input(uart);
+                // }
+                // else
+                // {
+                //     uart_read_bytes(uart, receivedData, pos, 100 / portTICK_PERIOD_MS);
+                //     uint8_t pat[PATTERN_CHR_NUM + 1];
+                //     memset(pat, 0, sizeof(pat));
+                //     uart_read_bytes(uart, pat, PATTERN_CHR_NUM, 100 / portTICK_PERIOD_MS);
+                //     ESP_LOGI(TAG, "read data: %s", receivedData);
+                //     ESP_LOGI(TAG, "read pat : %s", pat);
+                // }
                 break;
             }
             // Others
@@ -172,7 +193,7 @@ int Sim800lESP::receiveData()
             } 
         } else {
             ESP_LOGI(TAG, "timeout");
-            return (int)Sim800lErr; 
+            return (int)Sim800lTimeoutErr; 
         }
     }
 
@@ -188,12 +209,12 @@ Sim800lError Sim800lESP::setDRT(Sim800lPin set) {
     if(gpio_set_level(drt, set) == ESP_OK)
         return Sim800lOk;
     else
-        return Sim800lErr;
+        return Sim800lHardwareErr;
 }
 
 Sim800lError Sim800lESP::setRST(Sim800lPin set) {
     if(gpio_set_level(rst, set) == ESP_OK)
         return Sim800lOk;
     else
-        return Sim800lErr;
+        return Sim800lHardwareErr;
 }

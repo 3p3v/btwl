@@ -9,17 +9,26 @@
 #include "freertos/FreeRTOS.h"
 #include <esp_log.h>
 #include "esp_mac.h"
+#include <math.h>
+#include <string.h>
 // #include <esp_err.h>
 
 JsonData::JsonData()
-	: fullStats(nullptr), parsedData(nullptr){}
+	: fullStats(nullptr), parsedData(nullptr), protect(false), open(false), ack(true) {}
 
 JsonData::~JsonData() {
-	cJSON_Delete(fullStats);
+	// cJSON_Delete(fullStats);
 }
 
-JsonDataErr JsonData::check(cJSON * var) {
-	if(var == NULL) {
+float JsonData::roundUp(const double var, const int cut)
+{
+	float value = (int)(var * 100 + .5);
+    return (float)value / 100;
+}
+
+JsonDataErr JsonData::check(cJSON *var)
+{
+    if(var == NULL) {
 		return JsonDataAllErr;
 	}
 
@@ -44,6 +53,18 @@ JsonDataErr JsonData::init() {
 		cJSON_Delete(fullStats);
 		return JsonDataAllErr;
 	}
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::initNewMessage() {
+	fullStats = cJSON_CreateObject();
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::deinitNewMessage() {
+	cJSON_Delete(fullStats);
 
 	return JsonDataOk;
 }
@@ -75,15 +96,31 @@ JsonDataErr JsonData::addTime(GpsTime time)
     int len = 0;
 	
 	char temp[JSON_DATA_TIME_LEN * 3] = {};
+	if(time.hh < 10)
+		len += snprintf(temp + len, 7, "%i", 0);
 	len += snprintf(temp, 7, "%i", time.hh);
-	temp[2] = ':';
+	temp[len] = ':';
 	len++;
+	if(time.mm < 10)
+		len += snprintf(temp + len, 7, "%i", 0);
 	len += snprintf(temp + len, 7, "%i", time.mm);
-	temp[4] = ':';
+	temp[len] = ':';
 	len++;
+	if(time.ss < 10)
+		len += snprintf(temp + len, 7, "%i", 0);
 	len += snprintf(temp + len, 7, "%i", time.ss);
 
 	cJSON_AddStringToObject(fullStats, "time", temp);
+
+	return JsonDataOk;
+}
+
+JsonDataErr JsonData::addMessage(Message message)
+{
+    // cJSON *boolP = cJSON_CreateBool();
+	cJSON_AddBoolToObject(fullStats, "protect", message.getProtect());
+	cJSON_AddBoolToObject(fullStats, "open", message.getOpen());
+	cJSON_AddBoolToObject(fullStats, "ack", message.getAck());
 
 	return JsonDataOk;
 }
@@ -113,7 +150,7 @@ JsonDataErr JsonData::addGpsInfo(int err, GpsFloat lati, GpsFloat longi) {
 	// 	return JsonDataAllErr;
 
 	cJSON_AddNumberToObject(fullStats, "latitude", lati);
-	cJSON_AddNumberToObject(fullStats, "latitude", longi);
+	cJSON_AddNumberToObject(fullStats, "longitude", longi);
 	return JsonDataOk;
 }
 
@@ -182,5 +219,89 @@ JsonDataErr JsonData::addTempInfo(int err, SHT30Float temperature, SHT30Float hu
 	return JsonDataOk;
 }
 
+JsonDataErr JsonData::update(char * raw) {
+	char *start = strchr(raw, (int)'{');
+	char *end = strchr(raw, (int)'}');
 
+	if(start == NULL || end == NULL)
+		return JsonDataError;
 
+	char newJ[100];
+	memset(newJ, '0', 100);
+	int i = 0;
+	while(1) {
+		if((start - 1) != end) {
+			newJ[i] = *start;
+			start++;
+			i++;
+		} else {
+			break;
+		}
+	}
+
+	const cJSON *jsonProtect = NULL;
+	const cJSON *jsonOpen = NULL;
+	const cJSON *jsonAck = NULL;
+	cJSON *monitor_json = cJSON_Parse(newJ);
+	ESP_LOGI("JSON", "check 0");
+
+	if (monitor_json == NULL) {
+		ESP_LOGI("JSON", "check 0");
+		return JsonDataError;
+	}
+
+	jsonProtect = cJSON_GetObjectItemCaseSensitive(monitor_json, "protect");
+	ESP_LOGI("JSON", "check 1");
+	if(cJSON_IsBool(jsonProtect) == true) {
+		if(cJSON_IsTrue(jsonProtect)) {
+			protect = true;
+		} else {
+			protect = false;
+		}
+	} else {
+		ESP_LOGI("JSON", "check 1");
+		return JsonDataError;
+	}
+
+	jsonOpen = cJSON_GetObjectItemCaseSensitive(monitor_json, "open");
+	ESP_LOGI("JSON", "check 2");
+	if(cJSON_IsBool(jsonOpen) == true) {
+		if(cJSON_IsTrue(jsonOpen)) {
+			open = true;
+		} else {
+			open = false;
+		}
+	} else {
+		ESP_LOGI("JSON", "check 2");
+		return JsonDataError;
+	}
+
+	jsonAck = cJSON_GetObjectItemCaseSensitive(monitor_json, "ack");
+	ESP_LOGI("JSON", "check 3");
+	if(cJSON_IsBool(jsonAck) == true) {
+		if(cJSON_IsTrue(jsonAck)) {
+			ack = true;
+		} else {
+			ack = false;
+		}
+	} else {
+		ESP_LOGI("JSON", "check 3");
+		return JsonDataError;
+	}
+
+	cJSON_Delete(monitor_json);
+
+	return JsonDataOk;
+}
+
+bool JsonData::getProtect() {
+	return protect;
+}
+
+bool JsonData::getOpen() {
+	return open;
+}
+
+bool JsonData::getAck() {
+	return ack;
+}

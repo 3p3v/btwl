@@ -8,16 +8,16 @@
 
 /* UART config */
 #define SIM800L_DEF_UART_NUM            UART_NUM_1
-#define SIM800L_DEF_UART_TX             17
-#define SIM800L_DEF_UART_RX             16
+#define SIM800L_DEF_UART_TX             GPIO_NUM_17
+#define SIM800L_DEF_UART_RX             GPIO_NUM_16
 #define SIM800L_DEF_UART_BAUD_RATE      9600
 
 /* Sleep and reset pins */
-#define SIM800L_DEF_DRT_PIN             23
-#define SIM800L_DEF_RST_PIN             18
+#define SIM800L_DEF_DRT_PIN             GPIO_NUM_23
+#define SIM800L_DEF_RST_PIN             GPIO_NUM_18
 
 /* Interrupt config */
-#define SIM800L_DEF_DOWNLOAD_TIME       5000
+#define SIM800L_DEF_DOWNLOAD_TIME       10000
 #define SIM800L_DEF_QUEUE_SIZE          10
 #define SIM800L_DEF_PATTERN_QUEUE_SIZE  5
 #define SIM800L_PATTERN_INTERVAL        0
@@ -32,6 +32,8 @@ public:
     virtual ~Sim800lESP();
 
     virtual Sim800lError init() override;
+    virtual Sim800lError deinit() override;
+    virtual Sim800lError reinit() override;
 
 protected:
     virtual Sim800lError sendData(const char * data) override;

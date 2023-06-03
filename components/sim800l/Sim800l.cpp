@@ -16,6 +16,16 @@ Sim800lError Sim800l::execAT()
     return sendAT();
 }
 
+Sim800lError Sim800l::execCCID()
+{
+    return sendAT("CCID");
+}
+
+Sim800lError Sim800l::readCREG()
+{
+    return sendAT("CREG?");
+}
+
 /*  AT+CSQ Signal Quality Report;
 *   returns "rrsi" and "ber"
 */
@@ -48,7 +58,7 @@ Sim800lError Sim800l::writeSAPBR(unsigned char cmd_type, unsigned char cid) {
 }
 
 /* AT+HTTPINIT Initialize HTTP Service  */
-int Sim800l::execHTTPINIT() {
+Sim800lError Sim800l::execHTTPINIT() {
    return sendAT("HTTPINIT");
 }
 
@@ -73,13 +83,19 @@ Sim800lError Sim800l::writeHTTPDATA(const int size, const int time, const char *
    sprintf(size_str, "%i", (int)size);
    sprintf(time_str, "%i", (int)time);
 
-   sendAT("HTTPDATA", {size_str, time_str});
+   if(sendAT("HTTPDATA", {size_str, time_str}) == Sim800lOk) {
+      ESP_LOGI("SIM", "TEST");
       simDelay(100);
       if(sendData(inputData) != Sim800lOk)
          return Sim800lErr;
 
+      ESP_LOGI("SIM", "TEST2");
       if(receiveData() <= 0)
          return Sim800lErr;
+
+      ESP_LOGI("SIM", "TEST3");
+      return Sim800lOk;
+   }
 
    return Sim800lErr;
 }
@@ -95,7 +111,38 @@ Sim800lError Sim800l::writeHTTPACTION(const int method) {
 
    sprintf(method_str, "%i", (int)method);
 
-   return sendAT("HTTPACTION", {method_str});
+   if(sendAT("HTTPACTION", {method_str}) == Sim800lOk) {
+      /* Check if got responce from server */
+      char resp[] = "+HTTPACTION:";
+      char * ptr = strstr(receivedData, resp);
+      
+      if(ptr != NULL) {
+         ptr += strlen(resp) + 4;
+
+         if(strstr(ptr, "200") == NULL)
+            return sim800lServerErr;
+
+         return Sim800lOk;
+      }
+
+      /* Redundand cycle */
+      if(receiveData() <= 0)
+         return Sim800lRecErr;
+
+      ptr = strstr(receivedData, resp);
+
+      if(ptr == NULL)
+         return Sim800lErr;
+
+      ptr += strlen(resp) + 4;
+
+      if(strstr(ptr, "200") == NULL)
+         return sim800lServerErr;
+
+      return Sim800lOk;
+   }
+
+   return Sim800lErr;
 }
 
 /* AT+HTTPREAD Read the HTTP Server Response */
@@ -113,7 +160,20 @@ Sim800lError Sim800l::execHTTPTERM() {
 }
 
 Sim800lError Sim800l::writeCSCLK(const unsigned char n) {
-   return sendAT("CSCLK", {n});
+   char nStr[10] = {};
+
+   sprintf(nStr, "%i", (int)n);
+
+   return sendAT("CSCLK", {nStr});
+}
+
+Sim800lError Sim800l::writeCFUN(const unsigned char fun)
+{
+   char funStr[10] = {};
+
+   sprintf(funStr, "%i", (int)fun);
+   
+   return sendAT("CFUN", {funStr});
 }
 
 Sim800lError Sim800l::setDRT(Sim800lPin set)
@@ -124,6 +184,15 @@ Sim800lError Sim800l::setDRT(Sim800lPin set)
 Sim800lError Sim800l::setRST(Sim800lPin set)
 {
    return Sim800lError();
+}
+
+Sim800lError Sim800l::writeCPOWD(const unsigned char n)
+{
+   char nStr[10] = {};
+
+   sprintf(nStr, "%i", (int)n);
+
+   return sendAT("CPOWD", {nStr});
 }
 
 // Sim800lError sendData(const char *data, int len);
@@ -143,28 +212,41 @@ Sim800lError Sim800l::sendAT() {
 
 Sim800lError Sim800l::retrieveErr()
 {
-   if(strstr(receivedData, "OK") != NULL)
+   if(strstr(receivedData, "OK") != NULL || strstr(receivedData, "DOWNLOAD") != NULL)
       return Sim800lOk;
-   else
+   else if (strstr(receivedData, "ERROR"))
       return Sim800lRecErr;
+   else 
+      return Sim800lErr;
 }
 
 Sim800lError Sim800l::sendReceiveRetriveData(const char * data)
 {
-   if(sendData(data) != Sim800lOk)
-      return Sim800lErr;
+   Sim800lError err = sendData(data);
+   if(err != Sim800lOk)
+      return err;
 
-   if(receiveData() <= 0)
-      return Sim800lErr;
+   int errInt = receiveData();
+   if(errInt <= 0)
+      return (Sim800lError)errInt;
 
-   Sim800lError err = retrieveErr();
+   err = retrieveErr();
 
    ESP_LOGI("SIM","%i, %i, %s", err, receivedLen, receivedData);
 
-   if(err != Sim800lOk)
+   if(err == Sim800lRecErr)
       return err;
-   else
-      return Sim800lOk;
+   else if (err == Sim800lOk)
+      return err;
+   else {
+      errInt = receiveData();
+      if(errInt <= 0)
+         return (Sim800lError)errInt;
+
+      err = retrieveErr();
+
+      return err;
+   }
 }
 
 void Sim800l::simDelay(int ms) {}

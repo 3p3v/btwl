@@ -42,6 +42,18 @@
         "string": "cpp",
         "hmc5883l.h": "c",
         "esp_timer.h": "c",
-        "set": "cpp"
+        "set": "cpp",
+        "memory": "cpp",
+        "random": "cpp",
+        "future": "cpp",
+        "netfwd": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp",
+        "system_error": "cpp",
+        "fstream": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp"
     }
 }
