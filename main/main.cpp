@@ -19,22 +19,29 @@
 #include "SHT30Esp8266.hpp"
 #include "Lid.hpp"
 #include "Message.hpp"
+#include "pins_def.hpp"
+#include "esp_timer.h"
+#include "other_def.hpp"
 
 /* DEFINITIONS */
-#define PIN_SDA 4
-#define PIN_CLK 5
-
 char webAddress[] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
 
 /* HANDLERS */
 TaskHandle_t sim_task_handle = NULL;
 TaskHandle_t acc_task_handle = NULL;
-TaskHandle_t send_task_handle = NULL;
+TaskHandle_t ans_send_task_handle = NULL;
+TaskHandle_t telemetry_send_task_handle = NULL;
+TaskHandle_t idle_get_task_handle = NULL;
+TaskHandle_t gpio_task_handle = NULL;
+esp_timer_handle_t lid_timer;
 
 /* SEMAPHORES */
 SemaphoreHandle_t send_task_semaphore = NULL;
 SemaphoreHandle_t message_update_semaphore = NULL;
 SemaphoreHandle_t sim_task_semaphore = NULL;
+
+/* QUEUES */
+QueueHandle_t gpio_evt_queue = NULL;
 
 /* MODULES INITIALIZATION */
 JsonData json;
@@ -45,22 +52,13 @@ MPU6050Parser mpuParser = MPU6050Parser(&mpu, 32768, 2);
 SHT30Esp8266 sht = SHT30Esp8266();
 /* SIM800l */
 Sim800lESP sim = Sim800lESP("google.com");
-/* UART init */
-uart_config_t uart_config_gps = {
-    .baud_rate = 9600,
-    .data_bits = UART_DATA_8_BITS,
-    .parity = UART_PARITY_DISABLE,
-    .stop_bits = UART_STOP_BITS_1,
-    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    .rx_flow_ctrl_thresh = 0,
-    .source_clk = UART_SCLK_DEFAULT};
 /* NEO-6m */
 GpsDownloaderESP downloader(&uart_config_gps);
 GpsCmdsFinder finder(&downloader);
 GpsGGA gga(&finder);
 /* Lid */
 Lid lid;
-
+/* Messages */
 Message currentMessage(false, false, true);
 ServerMessage pendingMessage(false, false, true, false);
 
@@ -68,6 +66,97 @@ ServerMessage pendingMessage(false, false, true, false);
 static void reloadSimTask();
 static void acc_task(void *arg);
 static void sim_task(void *arg);
+
+/* VARS */
+
+/* GPIO interrupt handler */
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+}
+
+/* GPIO interrupt task */
+// static void gpio_isr_task(void * arg) {
+//     /* wait for an interrupt */
+//      uint32_t io_num;
+//     for(;;) {
+//         if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+//             ESP_LOGI("GPIO isr", "GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num));
+//                 if(xSemaphoreTake(message_update_semaphore, portMAX_DELAY) == pdTRUE) {
+//                 switch(io_num) {
+//                     case MPU6050_INT_PIN: {
+//                         if(currentMessage.getProtect() == true) {
+//                             /* max acceleretion exceeded, send alarm to server */
+
+//                             /* disable max acc exceeded interrupt */
+
+//                         break;
+//                         } else (
+//                             break;
+//                         )
+//                     } case BUTTON_INT_PIN: {
+//                         if(currentMessage.getOpen() == false) {
+//                         /* send meaage to server */
+
+//                         /* button was clicked so disable it so the user wouldn't send messages endlessly */
+
+//                         break;
+//                         } else {
+//                             break;
+//                         }
+//                     } case LID_DETECTOR_PIN: {
+//                         /* Box waits for a lid to close */
+//                         if(currentMessage.getOpen() == false && pendingMessage.getAck() == false) {
+//                             lid.setLockOpen(false);
+
+//                             if(lid.getDetectorOpen() == true) {
+//                                 /* stop lid_timer */
+//                                 esp_timer_stop(&lid_timer);
+//                                 break;
+//                             } else {
+//                                 /* start lid_timer */
+//                                 esp_timer_start_once(&lid_timer, LID_TIMER_T);
+//                                 break;
+//                             }
+//                         /* Lid should be closed */
+//                         } else if(currentMessage.getOpen() == false) {
+//                             lid.setLockOpen(false);
+
+//                             if(lid.getDetectorOpen() == true) {
+//                                 //send alarm, TODO
+//                                 break;
+//                             } else {
+//                                 //it's ok, do nothing
+//                                 break;
+//                             }
+//                         /* Lid should be opened */
+//                         } else if(currentMessage.getOpen() == true) {
+//                             if(lid.getDetectorOpen() == true) {
+//                                 lid.setLockOpen(false);
+//                                 break;
+//                             } else {
+//                                 lid.setLockOpen(true);
+//                                 break;
+//                             }
+//                         }
+//                     }  
+//                 }
+//                 xSemaphoreGive(message_update_semaphore);
+//             }
+//         }
+//     }
+// }
+
+/* lid timer callback */
+static void lid_timer_callback(void* arg) {
+    /* Update message */
+    if(xSemaphoreTake(sim_task_semaphore, portMAX_DELAY)) {
+        currentMessage.setOpen(false);
+    
+        xSemaphoreGive(sim_task_semaphore);
+    }
+}
 
 /* Reload sim task */
 static void reloadSimTask() {
@@ -97,7 +186,7 @@ static void telemetry_send_task(void *arg) {
 
         json.initNewMessage();
 
-        json.addEspMac();
+        // json.addEspMac();
         json.addGpsInfo(gga.updateErr, (double)gga.getLatitude(), (double)gga.getLongitude());
         json.addAccInfo(0, (double)mpuParser.getAccX(), (double)mpuParser.getAccY(), (double)mpuParser.getAccZ());
         json.addTempInfo(/*shtErr*/0, (double)sht.getTemperature(), (double)sht.getHumidity());
@@ -262,19 +351,87 @@ static void acc_task(void *arg)
     lid.init();
     lid.setLockOpen(false);
 
-    while (1)
-    {
+    uint32_t io_num = 0;
+    uint8_t cycle = 0;
+    do {
+        cycle = 0;
         /* Download a valid state from server */
         if(xSemaphoreTake(sim_task_semaphore, portMAX_DELAY)) {//add timer?
             if(currentMessage.getProtect() == true)
-                xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &send_task_handle);
+                xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
             else
-                xTaskCreate(idle_get_task, "idle_get_task", 18000, NULL, 10, &send_task_handle);
+                xTaskCreate(idle_get_task, "idle_get_task", 18000, NULL, 10, &idle_get_task_handle);
         
             xSemaphoreGive(sim_task_semaphore);
         }
-        /* MPU6050 */
-        for(int i = 0; i < 7; i++) {
+
+        do {
+            /* Important events */
+             if(xSemaphoreTake(message_update_semaphore, portMAX_DELAY) == pdTRUE) {
+                switch(io_num) {
+                    case MPU6050_INT_PIN: {
+                        if(currentMessage.getProtect() == true) {
+                            /* max acceleretion exceeded, send alarm to server */
+                            /* disable max acc exceeded interrupt */
+
+                        break;
+                        } else {
+                            break;
+                        }
+                    } case BUTTON_INT_PIN: {
+                        if(currentMessage.getOpen() == false) {
+                        /* send meaage to server */
+
+                        /* button was clicked so disable it so the user wouldn't send messages endlessly */
+
+                        break;
+                        } else {
+                            break;
+                        }
+                    } case LID_DETECTOR_PIN: {
+                            /* Box waits for a lid to close */
+                            if(currentMessage.getOpen() == false && pendingMessage.getAck() == false) {
+                                lid.setLockOpen(false);
+
+                                if(lid.getDetectorOpen() == true) {
+                                    /* stop lid_timer */
+                                    esp_timer_stop(&lid_timer);
+                                    break;
+                                } else {
+                                    /* start lid_timer */
+                                    esp_timer_start_once(&lid_timer, LID_TIMER_T);
+                                    break;
+                                }
+                            /* Lid should be closed */
+                            } else if(currentMessage.getOpen() == false) {
+                                lid.setLockOpen(false);
+
+                                if(lid.getDetectorOpen() == true) {
+                                    //send alarm, TODO
+                                    break;
+                                } else {
+                                    //it's ok, do nothing
+                                    break;
+                                }
+                            /* Lid should be opened */
+                            } else if(currentMessage.getOpen() == true) {
+                                if(lid.getDetectorOpen() == true) {
+                                    lid.setLockOpen(false);
+                                    break;
+                                } else {
+                                    lid.setLockOpen(true);
+                                    break;
+                                }
+                            }
+                        }  default {
+                        break;
+                    }
+                }
+
+                xSemaphoreGive(message_update_semaphore);
+            }
+
+            /* MPU6050 */
             mpuParser.update();
             /* SHT30 */
             sht.update();
@@ -325,15 +482,15 @@ static void acc_task(void *arg)
                                 lid.setLockOpen(true);
                             }
                         }  
-                        /* Set close */
-                        else {
-                            lid.setLockOpen(false);
-                            if(lid.getDetectorOpen() == false) {
-                                currentMessage.setOpen(false);
-                            } else {
-                                /* wait */
-                            }
-                        }
+                        // /* Set close */
+                        // else {
+                        //     lid.setLockOpen(false);
+                        //     if(lid.getDetectorOpen() == false) {
+                        //         currentMessage.setOpen(false);
+                        //     } else {
+                        //         /* wait */
+                        //     }
+                        // }
                     }
                     /* Telemetry change */
                     else if(currentMessage.getProtect() != pendingMessage.getProtect()) {
@@ -353,12 +510,13 @@ static void acc_task(void *arg)
             }
 
             ESP_LOGI("WAIT", "");
+            cycle++;
             
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
+        /* Check if anything happened */
+        } while((xQueueReceive(gpio_evt_queue, &io_num, 2000 / portTICK_PERIOD_MS)) || ((currentMessage.getOpen() == false && currentMessage.getAck() == false) && (cycle < 7)) || (telemetry_send_task_handle) || (idle_get_task_handle));
 
         
-    }
+    } while(currentMessage.getOpen() == false && currentMessage.getAck() == false);
 
     
 }
@@ -487,9 +645,26 @@ extern "C"
         // pendingMessage = Message(false, false, true);
         json = JsonData();
         json.init();
+
+        /* SIM init */
+        xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
+
+        /* GPIO int */
+        gpio_set_intr_type(MPU6050_INT_PIN, GPIO_INTR_NEGEDGE);
+        gpio_set_intr_type(LID_DEFAULT_DETECTOR_PIN, GPIO_INTR_NEGEDGE | GPIO_INTR_POSEDGE);
+        gpio_set_intr_type(BUTTON_INT_PIN, GPIO_INTR_POSEDGE);
+
+        /* Timer & timer int config */
+        const esp_timer_create_args_t lid_timer_args = {
+            .callback = &lid_timer_callback,
+            /* argument specified here will be passed to timer callback function */
+            .arg = (void*) lid_timer,
+            .name = "lid-timer"
+        };
+        ESP_ERR_CHECK(esp_timer_create(&lid_timer_args, &lid_timer));
         
         // xTaskCreatePinnedToCore(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle, 0);
-        xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
+        
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         xTaskCreate(acc_task, "acc_task", 12000, NULL, 10, &acc_task_handle);
     }

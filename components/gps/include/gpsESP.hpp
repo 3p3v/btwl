@@ -18,8 +18,8 @@
 
 class  GpsDownloaderESP final: public GpsRawDataDownloader {
 public:
-	GpsDownloaderESP(uart_config_t *uartConf);
-	GpsDownloaderESP(uart_port_t uartNum, int tx, int rx, uart_config_t *uartConf);
+	GpsDownloaderESP();
+	GpsDownloaderESP(uart_port_t uartNum, int tx, int rx);
 	~GpsDownloaderESP();
 
 	virtual GpsError init();	//TODO
@@ -29,5 +29,5 @@ private:
 	uart_port_t uartNum;
 	int tx;
 	int rx;
-	uart_config_t *uartConf;
+	// uart_config_t *uartConf;
 };
