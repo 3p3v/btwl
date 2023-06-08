@@ -24,7 +24,7 @@
 #define PIN_SDA 4
 #define PIN_CLK 5
 
-char webAddress[] = "ec2-3-239-238-44.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
+char webAddress[] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
 
 /* HANDLERS */
 TaskHandle_t sim_task_handle = NULL;
@@ -344,7 +344,7 @@ static void acc_task(void *arg)
                     } 
                 } 
                 /* Everything else is ok so just send confirmation */
-                if (pendingMessage.getAck() == false) {
+                if (currentMessage.isSame(pendingMessage) == true && pendingMessage.getAck() == false) {
                     currentMessage.setAck(true);
                     xTaskCreate(ans_send_task, "send_task", 12000, NULL, 10, &send_task_handle);
                 }

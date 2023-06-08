@@ -47,16 +47,16 @@ protected:
 class ServerMessage : public Message {
 public:
     ServerMessage(bool protect, bool open, bool ack, bool valid)
-        : protect(protect), open(open), ack(ack), valid(valid) {}
+        : Message(protect, open, ack), valid(valid) {}
 
     void setValid(bool valid) {
-        this.valid = valid;
+        this->valid = valid;
     }
 
-    bool getValid(bool valid) {
+    bool getValid() {
         return valid;
     }
 
 private:
     bool valid;
-}
+};

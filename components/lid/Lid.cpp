@@ -33,7 +33,7 @@ bool Lid::init() {
     gpio_config_t detectorkConfig = {
         .pin_bit_mask = BIT64(detectorPin),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
@@ -46,9 +46,9 @@ bool Lid::init() {
 
 bool Lid::getDetectorOpen() {
     if(gpio_get_level(detectorPin) == 1) 
-        return true;
-    else    
         return false;
+    else    
+        return true;
 }
 
 bool Lid::setLockOpen(bool status) {
