@@ -47,7 +47,7 @@ SemaphoreHandle_t sim_task_semaphore = NULL;
 QueueHandle_t gpio_evt_queue = NULL;
 
 /* MODULES INITIALIZATION */
-JsonData json;
+JsonData json = JsonData();
 /* MPU6050 */
 MPU6050 mpu = MPU6050();
 MPU6050Parser mpuParser = MPU6050Parser(&mpu, 32768, 2);
@@ -56,13 +56,14 @@ SHT30Esp8266 sht = SHT30Esp8266();
 /* SIM800l */
 Sim800lESP sim = Sim800lESP("google.com");
 /* NEO-6m */
-GpsDownloaderESP downloader;
+GpsDownloaderESP downloader = GpsDownloaderESP();
 GpsCmdsFinder finder(&downloader);
 GpsGGA gga(&finder);
+GpsAllData gps = GpsAllData(&finder, &downloader);
 /* Lid */
 Lid lid;
 /* Messages */
-Message currentMessage(false, false, true);
+ESPNonVolatileMessage currentMessage(false, false, true);
 ServerMessage pendingMessage(false, false, true, false);
 
 /* FUNCTION'S DECLARATIONS */
@@ -282,93 +283,51 @@ static void ans_send_task(void *arg)
 /* Getting and transforming data && choosing correct messages and requests */
 static void acc_task(void *arg)
 {
-
-    i2c_config_t conf;
-    conf.mode = I2C_MODE_MASTER;
-    conf.sda_io_num = (gpio_num_t)HMC5883L_DEF_I2C_SDA;
-    conf.scl_io_num = (gpio_num_t)HMC5883L_DEF_I2C_SCL;
-    conf.sda_pullup_en = GPIO_PULLUP_DISABLE;
-    conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
-    conf.master.clk_speed = 400000;
-    conf.clk_flags = 0;
-
-    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &conf));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 120, 120, 0));
-
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-
-    /* MPU6050 init */
-    mpu.initialize();
-    // mpu.setWakeCycleEnabled(true);
-    /* Enable interrupts */
-    mpu.setIntFreefallEnabled(true);
-    mpu.setIntMotionEnabled(true);
-
-    /* Set max motion */
-    mpu.setFreefallDetectionThreshold(2);
-    mpu.setFreefallDetectionDuration(1);
-    mpu.setMotionDetectionThreshold(2);
-    mpu.setMotionDetectionDuration(1);
-    mpu.setMotionDetectionCounterDecrement(0);
-
-    /* SHT30 init */
-    // not implemented
-    /* NEO-6m init */
-    downloader = GpsDownloaderESP();
-    GpsAllData gps = GpsAllData(&finder, &downloader);
-    gps.add(&gga);
-    ESP_LOGI("GPS:", "starting");
-    downloader.init();
-    /* Lid init */
-    lid = Lid();
-    lid.init();
-    lid.setLockOpen(false);
-
-    uint32_t io_num = 0;
-    // uint8_t cycle = 0;
-    // do
-    // {
-    // cycle = 0;
-    /* Download a valid state from server */
+    uint32_t io_num = NONE_VIRTUAL_PIN;
 
     while ((xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS)) || (currentMessage.getAck() == false) || ((telemetry_send_task_handle != NULL) || (eTaskGetState(telemetry_send_task_handle) == eRunning)) || ((idle_get_task_handle != NULL) || (eTaskGetState(idle_get_task_handle) == eRunning)))
     {
-        /* Important events */
-        // if (xSemaphoreTake(message_update_semaphore, portMAX_DELAY) == pdTRUE)
-        // {
-            switch (io_num)
+        switch (io_num)
+        {
+        case MPU6050_INT_PIN:
+        {
+            if (currentMessage.getProtect() == true)
             {
-            case MPU6050_INT_PIN:
-            {
-                if (currentMessage.getProtect() == true)
-                {
-                    /* max acceleretion exceeded, send alarm to server */
-                    /* disable max acc exceeded interrupt */
-
-                    break;
-                }
-                else
-                {
-                    break;
-                }
-            }
-            default:
-            {
+                /* max acceleretion exceeded, send alarm to server */
                 if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
                 { // add timer?
-                    if (currentMessage.getProtect() == true)
-                        xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
-                    else
-                        xTaskCreate(idle_get_task, "idle_get_task", 35000, NULL, 10, &idle_get_task_handle);
+                    /* send telemetry */
+                    xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
+                    /* send alarm */
 
                     xSemaphoreGive(sim_task_semaphore);
                 }
+                /* disable max acc exceeded interrupt */
+
                 break;
             }
+            else
+            {
+                break;
             }
+        }
+        case NONE_VIRTUAL_PIN: {
+            break;
+        }
+        default:
+        {
+            if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
+            { // add timer?
+                if (currentMessage.getProtect() == true)
+                    xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
+                else
+                    xTaskCreate(idle_get_task, "idle_get_task", 35000, NULL, 10, &idle_get_task_handle);
 
-            // xSemaphoreGive(message_update_semaphore);
-        // }
+                xSemaphoreGive(sim_task_semaphore);
+            }
+            break;
+        }
+        }
 
         /* MPU6050 */
         mpuParser.update();
@@ -426,10 +385,7 @@ static void acc_task(void *arg)
                     /* Set open */
                     if (pendingMessage.getOpen() == true)
                     {
-                        /* change value in RAM */
                         currentMessage.setOpen(true);
-                        /* change value in non-volatile memory */
-                        
 
                         if (lid.getDetectorOpen() == true)
                         {
@@ -460,7 +416,7 @@ static void acc_task(void *arg)
                             if (lid_timer_on == false)
                             {
                                 lid_timer_on = true;
-                                esp_timer_start_once(lid_timer, LID_TIMER_T);
+                                esp_timer_start_once(lid_timer, LID_TIMER_T * 1000);
                                 break;
                             }
                         }
@@ -485,10 +441,14 @@ static void acc_task(void *arg)
             xSemaphoreGive(message_update_semaphore);
         }
 
-        ESP_LOGI("WAIT", "");
+        ESP_LOGI("MAIN", "new cycle");
         // cycle++;
+        io_num = NONE_VIRTUAL_PIN;
+        
+        /* if there wasnt any interrupt or lid is not open then break */
+        if(uxQueueMessagesWaiting) {
 
-        /* Check if anything happened */
+        }
     }
 
     // } while (currentMessage.getAck() == false);
@@ -496,7 +456,7 @@ static void acc_task(void *arg)
     /* Disable isrs */
     ESP_ERROR_CHECK(gpio_reset_pin(LID_DETECTOR_PIN));
     ESP_ERROR_CHECK(gpio_intr_disable(LID_DETECTOR_PIN));
-    ESP_ERROR_CHECK(gpio_reset_pin(BUTTON_INT_PIN));//TODO ????
+    ESP_ERROR_CHECK(gpio_reset_pin(BUTTON_INT_PIN)); // TODO ????
     ESP_ERROR_CHECK(gpio_intr_disable(BUTTON_INT_PIN));
     ESP_ERROR_CHECK(gpio_reset_pin(MPU6050_INT_PIN));
     ESP_ERROR_CHECK(gpio_intr_disable(MPU6050_INT_PIN));
@@ -505,10 +465,9 @@ static void acc_task(void *arg)
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(ESP_DEEP_SLEEP_T * 10000)); // timer
     const uint64_t ext_wakeup_pin_1_mask = 1ULL << MPU6050_INT_PIN;
     const uint64_t ext_wakeup_pin_2_mask = 1ULL << BUTTON_INT_PIN;
-    if (lid.getDetectorOpen() == false)
+
+    if (currentMessage.getOpen() == true)
     { // ext1
-        // ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask, ESP_EXT1_WAKEUP_ANY_HIGH));//ESP_EXT1_WAKEUP_ALL_LOW));
-        // ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON));
         ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(LID_DETECTOR_PIN, 1));
         ESP_ERROR_CHECK(rtc_gpio_pullup_en(LID_DETECTOR_PIN));
         ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(LID_DETECTOR_PIN));
@@ -520,16 +479,13 @@ static void acc_task(void *arg)
         ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(LID_DETECTOR_PIN));
         ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH));
         ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON));
-        ESP_ERROR_CHECK(rtc_gpio_pullup_en(MPU6050_INT_PIN));
+        ESP_ERROR_CHECK(rtc_gpio_pullup_dis(MPU6050_INT_PIN));
         ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(MPU6050_INT_PIN));
         ESP_ERROR_CHECK(rtc_gpio_pullup_dis(BUTTON_INT_PIN));
         ESP_ERROR_CHECK(rtc_gpio_pulldown_en(BUTTON_INT_PIN));
     }
-    nvs_flash_deinit(void);//TODO ?????????
-    // ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(MPU6050_INT_PIN, 0));         //ext0
-    // ESP_ERROR_CHECK(rtc_gpio_pullup_dis(MPU6050_INT_PIN));
-    // ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(MPU6050_INT_PIN));
-    vTaskDelay(100);
+
+    // vTaskDelay(100);
     ESP_LOGI("SLEEP", "START");
     esp_deep_sleep_start();
 }
@@ -670,45 +626,66 @@ extern "C"
 #endif
     void app_main(void)
     {
-        ESP_ERROR_CHECK(nvs_flash_init(void));
+        /* initialoze non-volatile memory */
+        esp_err_t err = nvs_flash_init();
+        if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+        {
+            // NVS partition was truncated and needs to be erased
+            // Retry nvs_flash_init
+            ESP_ERROR_CHECK(nvs_flash_erase());
+            err = nvs_flash_init();
+        }
+        ESP_ERROR_CHECK(err);
 
-        switch()
-        
+        /* get last current message from nvs */
+        currentMessage.init();
+
         /* clean up after deep sleep */
         rtc_gpio_deinit(LID_DETECTOR_PIN);
         rtc_gpio_deinit(BUTTON_INT_PIN);
+        rtc_gpio_deinit(MPU6050_INT_PIN);
 
-        /* INIT objects */                                  // TODO
+        /* init FreeRTOS objects */                                  // TODO
         send_task_semaphore = xSemaphoreCreateMutex();      // xSemaphoreCreateBinary();
         message_update_semaphore = xSemaphoreCreateMutex(); // xSemaphoreCreateBinary();
         sim_task_semaphore = xSemaphoreCreateMutex();
-        // currentMessage = Message(false, false, true);
-        // pendingMessage = Message(false, false, true);
-        json = JsonData();
-        json.init();
-
-        /* SIM init */
-        xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
-
-        /* GPIO int */
         gpio_evt_queue = xQueueCreate(5, sizeof(uint32_t));
+
+        /* I2C init */
+        i2c_config_t conf;
+        conf.mode = I2C_MODE_MASTER;
+        conf.sda_io_num = (gpio_num_t)HMC5883L_DEF_I2C_SDA;
+        conf.scl_io_num = (gpio_num_t)HMC5883L_DEF_I2C_SCL;
+        conf.sda_pullup_en = GPIO_PULLUP_DISABLE;
+        conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
+        conf.master.clk_speed = 400000;
+        conf.clk_flags = 0;
+
+        ESP_ERROR_CHECK(i2c_param_config(MPU6050_SHT30_PIN, &conf));
+        ESP_ERROR_CHECK(i2c_driver_install(MPU6050_SHT30_PIN, I2C_MODE_MASTER, 120, 120, 0));
+
+        /* GPIO && GPIO int */
         const gpio_config_t config = {
             .pin_bit_mask = BIT(MPU6050_INT_PIN),
             .mode = GPIO_MODE_INPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE};
         gpio_config(&config);
-        // gpio_set_intr_type(MPU6050_INT_PIN, GPIO_INTR_NEGEDGE);
-        // gpio_set_intr_type(LID_DEFAULT_DETECTOR_PIN, (gpio_int_type_t)(GPIO_INTR_NEGEDGE | GPIO_INTR_POSEDGE));
+        gpio_set_intr_type(MPU6050_INT_PIN, GPIO_INTR_NEGEDGE);
+        gpio_set_intr_type(LID_DEFAULT_DETECTOR_PIN, (gpio_int_type_t)(GPIO_INTR_NEGEDGE | GPIO_INTR_POSEDGE));
         const gpio_config_t config1 = {
             .pin_bit_mask = BIT(BUTTON_INT_PIN),
             .mode = GPIO_MODE_INPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE};
         gpio_config(&config1);
-        // gpio_set_intr_type(BUTTON_INT_PIN, (gpio_int_type_t)GPIO_INTR_POSEDGE);
+        gpio_set_intr_type(BUTTON_INT_PIN, (gpio_int_type_t)GPIO_INTR_POSEDGE);
+        gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+        gpio_isr_handler_add(MPU6050_INT_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
+        gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
+        gpio_isr_handler_add(BUTTON_INT_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
 
-        /* Timer & timer int config */
+        /* lid imer & lid timer int config */
         const esp_timer_create_args_t lid_timer_args = {
             .callback = &lid_timer_callback,
             /* argument specified here will be passed to timer callback function */
@@ -716,9 +693,107 @@ extern "C"
             .name = "lid-timer"};
         ESP_ERROR_CHECK(esp_timer_create(&lid_timer_args, &lid_timer));
 
+        /* send imer & send timer int config */
+        const esp_timer_create_args_t send_timer_args = {
+            .callback = &send_timer_callback,
+            /* argument specified here will be passed to timer callback function */
+            .arg = (void *)send_timer,
+            .name = "send-timer"};
+        ESP_ERROR_CHECK(esp_timer_create(&send_timer_args, &send_timer));
+
+        /* GPS init */
+        gps.add(&gga);
+        ESP_LOGI("GPS:", "starting");
+        downloader.init();
+        /* Lid init */
+        lid = Lid();
+        lid.init();
+        lid.setLockOpen(false);
+        /* JSON init */
+        json.init();
+
+        /* get reason of waking up, add task to queue */
+        switch (esp_sleep_get_wakeup_cause())
+        {
+            /* timer wat triggered, normal behaviour */
+            case ESP_SLEEP_WAKEUP_TIMER: {
+                ESP_LOGI("ESP_SLEEP", "weaken up from a timer");
+                int pin = TIMER_VIRTUAL_PIN;
+                xQueueSend(gpio_evt_queue, &pin, NULL);
+                break;
+            }
+            /* lid status was changed */
+            case ESP_SLEEP_WAKEUP_EXT0: {
+                ESP_LOGI("ESP_SLEEP", "lid status was changed");
+                int pin = GPIO_NUM_4;
+                xQueueSend(gpio_evt_queue, &pin, NULL);
+                break;
+            }
+            /* acceleration over max or user wants to wake up a box */
+            case ESP_SLEEP_WAKEUP_EXT1: {
+                ESP_LOGI("ESP_SLEEP", "acceleration over max or user wants to wake up a box");
+                uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
+                if (wakeup_pin_mask == 0) 
+                {
+                    int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
+                    printf("Wake up from a GPIO %d\n", pin);
+                    if(pin == (1ULL << MPU6050_INT_PIN))
+                    {
+                        int pin2 = MPU6050_INT_PIN;
+                        xQueueSend(gpio_evt_queue, &pin2, NULL);
+                    }
+                    else if(pin == (1ULL << BUTTON_INT_PIN))
+                    {
+                        int pin2 = BUTTON_INT_PIN;
+                        xQueueSend(gpio_evt_queue, &pin2, NULL);
+                    }
+                } 
+                /* unknown reason */
+                else {
+                    ESP_LOGI("ESP_SLEEP", "unknown reason");
+                    int pin = TIMER_VIRTUAL_PIN;
+                    xQueueSend(gpio_evt_queue, &pin, NULL);
+                }
+                break;
+            }
+            /* clean reset, initialize devices */
+            case ESP_SLEEP_WAKEUP_UNDEFINED: {
+                ESP_LOGI("ESP_SLEEP", "clean reset, initialize devices");
+                int pin = TIMER_VIRTUAL_PIN;
+                xQueueSend(gpio_evt_queue, &pin, NULL);
+
+                /* SIM init */
+                xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
+
+                vTaskDelay(200 / portTICK_PERIOD_MS);
+
+                /* MPU6050 init */
+                mpu.initialize();
+                // mpu.setWakeCycleEnabled(true);
+                /* Enable interrupts */
+                mpu.setIntFreefallEnabled(true);
+                mpu.setIntMotionEnabled(true);
+
+                /* calibrate */
+                mpu.CalibrateAccel(2/*6*/);//TODO ??
+
+                /* Set max motion */
+                mpu.setFreefallDetectionThreshold(2);
+                mpu.setFreefallDetectionDuration(1);
+                mpu.setMotionDetectionThreshold(2);
+                mpu.setMotionDetectionDuration(1);
+                mpu.setMotionDetectionCounterDecrement(0);
+                break;
+            }
+            /* unknown reason */
+            default: {
+                ESP_LOGI("ESP_SLEEP", "unknown reason");
+            }
+        }
         // xTaskCreatePinnedToCore(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle, 0);
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
+        /* start main */
         xTaskCreate(acc_task, "acc_task", 70000, NULL, 10, &acc_task_handle);
     }
 #ifdef __cplusplus

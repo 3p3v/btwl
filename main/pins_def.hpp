@@ -31,3 +31,10 @@
 
 /* BUTTON */
 #define BUTTON_INT_PIN              GPIO_NUM_27
+
+/* MPU6050 && SHT30 */
+#define MPU6050_SHT30_NUM           I2C_NUM_0
+
+/* GPIO INT PINS */
+#define TIMER_VIRTUAL_PIN           0
+#define NONE_VIRTUAL_PIN            99
