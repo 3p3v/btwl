@@ -41,8 +41,8 @@ Sim800lError Sim800l::readCREG()
 
 /* AT+SAPBR Bearer Settings for Applications Based on IP */
 Sim800lError Sim800l::writeSAPBR(const unsigned char cmd_type, const unsigned char cid, const char *ConParamTag, const char *ConParamValue) {
-   char cmd_type_str[11] = {};
-   char cid_str[11] = {};
+   char cmd_type_str[20] = {};
+   char cid_str[20] = {};
 
    sprintf(cmd_type_str, "%i", (int)cmd_type);
    sprintf(cid_str, "%i", (int)cid);

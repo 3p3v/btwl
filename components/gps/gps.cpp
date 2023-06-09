@@ -13,11 +13,11 @@
 
 GpsRawData::GpsRawData() {
 	//ifChanged = true;
-	data = (char*)pvPortMalloc(sizeof(char*) * dataLength);
+	// data = (char*)pvPortMalloc(sizeof(char*) * dataLength);
 }
 
 GpsRawData::~GpsRawData() {
-	vPortFree(data);
+	// vPortFree(data);
 }
 
 GpsRawDataDownloader::GpsRawDataDownloader() {}

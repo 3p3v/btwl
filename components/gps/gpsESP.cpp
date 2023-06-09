@@ -42,7 +42,7 @@ GpsError GpsDownloaderESP::init()
 		return GpsUnkonwnErr;
 	}
 
-    if(uart_param_config(uartNum, &uartConf) != ESP_OK) {
+    if(uart_param_config(uartNum, &uart_config_gps) != ESP_OK) {
 		uart_driver_delete(uartNum);
 		return GpsUnkonwnErr;
 	}

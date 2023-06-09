@@ -168,9 +168,9 @@ int Sim800lESP::receiveData()
             // UART_PATTERN_DET
             case UART_PATTERN_DET:
             {
-                uart_get_buffered_data_len(uart, &buffered_size);
-                int pos = uart_pattern_pop_pos(uart);
-                ESP_LOGI(TAG, "[UART PATTERN DETECTED] pos: %d, buffered size: %d", pos, buffered_size);
+                // uart_get_buffered_data_len(uart, &buffered_size);
+                // int pos = uart_pattern_pop_pos(uart);
+                // ESP_LOGI(TAG, "[UART PATTERN DETECTED] pos: %d, buffered size: %d", pos, buffered_size);
                 // if (pos == -1)
                 // {
                 //     uart_flush_input(uart);

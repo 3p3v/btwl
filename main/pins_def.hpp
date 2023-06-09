@@ -23,11 +23,11 @@
 #define PIN_CLK 5
 
 /* MPU6050 */
-#define MPU6050_INT_PIN             GPIO_NUM_32
+#define MPU6050_INT_PIN             GPIO_NUM_25
 
 /* LID */
 #define LID_LOCK_PIN                GPIO_NUM_2
 #define LID_DETECTOR_PIN            GPIO_NUM_4
 
 /* BUTTON */
-#define BUTTON_INT_PIN                  0
+#define BUTTON_INT_PIN              GPIO_NUM_27

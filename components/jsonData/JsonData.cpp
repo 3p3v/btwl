@@ -223,6 +223,8 @@ JsonDataErr JsonData::update(char * raw) {
 	char *start = strchr(raw, (int)'{');
 	char *end = strchr(raw, (int)'}');
 
+	ESP_LOGI("JSON", "check -0");
+
 	if(start == NULL || end == NULL)
 		return JsonDataError;
 

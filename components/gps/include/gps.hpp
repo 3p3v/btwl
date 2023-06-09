@@ -36,7 +36,7 @@ public:
 	GpsRawData();
 	virtual ~GpsRawData() = 0;
 
-	char* data;
+	char data[dataLength];
 };
 
 /* Used to download data on user command */
