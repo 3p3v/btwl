@@ -4,6 +4,7 @@ idf_component_register(SRCS "main.cpp"
                              driver
                              esp_timer
                              esp_system
+                             nvs_flash
                              hal
                              I2Cdev
                              hmc5883lUni

@@ -15,6 +15,9 @@ public:
     Sim800lBB(const char * url);
     virtual ~Sim800lBB() = 0;
 
+    virtual bool getSleep() final;
+    virtual void setSleep(bool sleep) final;
+
     /* Set defualt server */
     virtual void setDefualtUrl(const char * url);
 
@@ -78,6 +81,7 @@ public:
 protected:
     char * defaultUrl[SIM800L_DEF_URL_LEN]; 
     uint8_t conFlags;
+    bool sleep;
 
     /* Set status */
     virtual void setStatus(const Sim800lStatus status) final;

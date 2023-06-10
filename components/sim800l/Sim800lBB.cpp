@@ -4,11 +4,21 @@
 #include <esp_log.h>
 
 Sim800lBB::Sim800lBB(const char * url)
-    :conFlags(0) {
+    :conFlags(0), sleep(true) {
     memcpy(defaultUrl, url, strlen(url));
 }
 
 Sim800lBB::~Sim800lBB() {}
+
+bool Sim800lBB::getSleep()
+{
+    return sleep;
+}
+
+void Sim800lBB::setSleep(bool sleep)
+{
+    this->sleep = sleep;
+}
 
 void Sim800lBB::setDefualtUrl(const char *url)
 {
@@ -87,33 +97,34 @@ Sim800lError Sim800lBB::setAccessPoint(const char *ap)
 
 Sim800lError Sim800lBB::sendHTTPPOST(const char *url, const char * data, char * output)
 {
-    Sim800lError err = writeSAPBR(1, 1);
-    if(err != Sim800lOk) 
-        goto CON_DEINIT;
+    Sim800lError err;
+    // Sim800lError err = writeSAPBR(1, 1);
+    // // if(err != Sim800lOk) 
+    // //     return err;
 
-    err = writeSAPBR(2, 1);
-    if(err != Sim800lOk)
-        goto CON_DEINIT;
+    // err = writeSAPBR(2, 1);
+    // if(err != Sim800lOk)
+    //     goto CON_DEINIT;
 
     err = execHTTPINIT();
-    if(err != Sim800lOk) 
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk) 
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPPARA("CID", 1);
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPPARA("URL", url);
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPPARA("CONTENT", "application/json");
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPDATA(strlen(data), 15000, data);
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPACTION(1);
     // if(err != Sim800lOk)
@@ -155,34 +166,34 @@ Sim800lError Sim800lBB::sendHTTPPOST(const char * data, char * output)
 Sim800lError Sim800lBB::sendHTTPGET(const char *url, char * output)
 {
     Sim800lError err = writeSAPBR(1, 1);
-    if(err != Sim800lOk) 
-        goto CON_DEINIT;
+    // if(err != Sim800lOk) 
+    //     return err;
 
     err = writeSAPBR(2, 1);
-    if(err != Sim800lOk)
-        goto CON_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto CON_DEINIT;
 
     err = execHTTPINIT();
-    if(err != Sim800lOk) 
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk) 
+    //     goto HTTP_DEINIT;
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     err = writeHTTPPARA("CID", 1);
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPPARA("URL", url);
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     err = writeHTTPACTION(0);
     // if(err != Sim800lOk)
     //     goto HTTP_DEINIT;
 
     err = execHTTPREAD();
-    if(err != Sim800lOk)
-        goto HTTP_DEINIT;
+    // if(err != Sim800lOk)
+    //     goto HTTP_DEINIT;
 
     strcpy(output, receivedData);
     // memcpy(output, receivedData, receivedLen);
@@ -210,19 +221,38 @@ Sim800lError Sim800lBB::sendHTTPGET(const char *url, char * output)
 
 Sim800lError Sim800lBB::sleepModeEnable()
 {
-    if(setDRT(Sim800lPinHigh) == Sim800lOk)
-        if(writeCSCLK(1) == Sim800lOk)
-            return setDRT(Sim800lPinLow);
+    Sim800lError err = Sim800lErr;
+    
+    for(int i = 0; i < 10; i++) {
+        if(setDRT(Sim800lPinHigh) == Sim800lOk)
+            err = writeCSCLK(1);
+
+        setDRT(Sim800lPinLow); 
+
+        if(err == Sim800lOk) {
+            sleep = true;
+            return err;
+        }
+    }        
 
     return Sim800lErr;
 }
 
 Sim800lError Sim800lBB::sleepModeDisable()
 {
-    if(setDRT(Sim800lPinHigh) == Sim800lOk)
-        if(sendAT() == Sim800lOk)
-            if(writeCSCLK(0) == Sim800lOk)
-                return setDRT(Sim800lPinLow);
+    Sim800lError err = Sim800lErr;
+    
+    for(int i = 0; i < 10; i++) {
+        if(setDRT(Sim800lPinHigh) == Sim800lOk)
+            err = writeCSCLK(0);
+
+        setDRT(Sim800lPinLow); 
+
+        if(err == Sim800lOk){
+            sleep = false;
+            return err;
+        }
+    }        
 
     return Sim800lErr;
 }

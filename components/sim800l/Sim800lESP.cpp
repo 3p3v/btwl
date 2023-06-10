@@ -39,6 +39,8 @@ Sim800lError Sim800lESP::init()
         .source_clk = UART_SCLK_DEFAULT
 	};
 
+    // uartQueue = 
+
     /* Basic UART config */
     ESP_ERROR_CHECK(uart_driver_install(uart, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_BUF_SIZE, SIM800L_DEF_QUEUE_SIZE, &uartQueue, 0));
     ESP_ERROR_CHECK(uart_param_config(uart, &uartConf));

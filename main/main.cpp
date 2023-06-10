@@ -24,7 +24,7 @@
 #include "other_def.hpp"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
-#include "components/nvs_flash/include/nvs_flash.h"
+#include "nvs_flash.h"
 
 /* DEFINITIONS */
 char webAddress[] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
@@ -37,6 +37,7 @@ TaskHandle_t telemetry_send_task_handle = NULL;
 TaskHandle_t idle_get_task_handle = NULL;
 TaskHandle_t gpio_task_handle = NULL;
 esp_timer_handle_t lid_timer;
+esp_timer_handle_t send_timer;
 
 /* SEMAPHORES */
 SemaphoreHandle_t send_task_semaphore = NULL;
@@ -70,14 +71,29 @@ ServerMessage pendingMessage(false, false, true, false);
 static void reloadSimTask();
 static void acc_task(void *arg);
 static void sim_task(void *arg);
+static void telemetry_send_task(void *arg);
+static void idle_get_task(void *arg);
 
 /* VARS */
 static bool lid_timer_on = false;
+static RTC_DATA_ATTR uint8_t esp_wake_cycle;
+esp_sleep_wakeup_cause_t wuc;
 
 /* GPIO interrupt handler */
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
     uint32_t gpio_num = (uint32_t)arg;
+    
+    if(gpio_num == BUTTON_INT_PIN) {
+        esp_wake_cycle = 0;
+        ESP_ERROR_CHECK(gpio_intr_disable(BUTTON_INT_PIN));
+        ESP_DRAM_LOGI("GPIO_ISR", "BUTTON_INT_PIN", (int)arg);
+    }
+    else if(gpio_num == MPU6050_INT_PIN) {
+        esp_wake_cycle = 0;
+        ESP_ERROR_CHECK(gpio_intr_disable(MPU6050_INT_PIN));
+        ESP_DRAM_LOGI("GPIO_ISR", "MPU6050_INT_PIN", (int)arg);
+    }
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
@@ -85,9 +101,30 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 static void lid_timer_callback(void *arg)
 {
     /* Update message */
-    if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
+    if (xSemaphoreTake(message_update_semaphore, portMAX_DELAY))
     {
         currentMessage.setOpen(false);
+
+        xSemaphoreGive(message_update_semaphore);
+    }
+}
+
+/* lid timer callback */
+static void send_timer_callback(void *arg)
+{
+    /* Update message */
+    if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
+    {
+        // if (currentMessage.getProtect() == true)
+        //     xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
+        // else {
+        //     ESP_LOGI("TIMER_CALLBACK", "starting idle task");
+        //     xTaskCreate(idle_get_task, "idle_get_task", 35000, NULL, 10, &idle_get_task_handle);
+        // }
+        ESP_LOGI("TIMER_CALLBACK", "requesting idle task");
+        int pin = TIMER_VIRTUAL_PIN;
+        xQueueSend(gpio_evt_queue, &pin, NULL);
+        esp_wake_cycle = 0;
 
         xSemaphoreGive(sim_task_semaphore);
     }
@@ -120,6 +157,9 @@ static void telemetry_send_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
+        if(sim.getSleep() == true)
+                sim.sleepModeDisable();
+
         /* Make new JSON */
         char output[SIM800L_DEF_BUF_SIZE];
         memset(output, 0, SIM800L_DEF_BUF_SIZE);
@@ -172,6 +212,13 @@ static void telemetry_send_task(void *arg)
         }
 
         xSemaphoreGive(send_task_semaphore);
+
+        esp_timer_stop(send_timer);
+        esp_timer_start_once(send_timer, ESP_SEND_T * 1000); 
+
+        int pin = TASK_END_VIRTUAL_PIN;
+        xQueueSend(gpio_evt_queue, &pin, NULL);
+
         vTaskDelete(NULL);
     }
 }
@@ -180,16 +227,19 @@ static void idle_get_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
+        if(sim.getSleep() == true)
+                sim.sleepModeDisable();
+
         char output[SIM800L_DEF_BUF_SIZE];
         memset(output, 0, SIM800L_DEF_BUF_SIZE);
 
         /* Send GET */
         /* Set AP */ // TODO do better error handling
-        ESP_LOGI("SIM", "Sending HTTP GET.");
+        ESP_LOGI("SIM", "Sending HTTP GET1.");
         char address[100];
         memset(address, 0, 100);
         sprintf(address, "%s/idle", webAddress);
-        ESP_LOGI("SIM", "Sending HTTP GET.");
+        ESP_LOGI("SIM", "Sending HTTP GET2.");
         Sim800lError err = sim.sendHTTPGET(address, output); //"{\n\"tt\":\t1\n}");
         if (err == Sim800lRecErr)
         {
@@ -220,6 +270,13 @@ static void idle_get_task(void *arg)
         }
 
         xSemaphoreGive(send_task_semaphore);
+
+        esp_timer_stop(send_timer);
+        esp_timer_start_once(send_timer, ESP_SEND_T * 1000); 
+
+        int pin = TASK_END_VIRTUAL_PIN;
+        xQueueSend(gpio_evt_queue, &pin, NULL);
+
         vTaskDelete(NULL);
     }
 }
@@ -228,6 +285,9 @@ static void ans_send_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
+        if(sim.getSleep() == true)
+                sim.sleepModeDisable();
+
         /* Make new JSON */
         char output[SIM800L_DEF_BUF_SIZE];
         memset(output, 0, SIM800L_DEF_BUF_SIZE);
@@ -277,6 +337,10 @@ static void ans_send_task(void *arg)
     }
 
     xSemaphoreGive(send_task_semaphore);
+
+    int pin = TASK_END_VIRTUAL_PIN;
+    xQueueSend(gpio_evt_queue, &pin, NULL);
+
     vTaskDelete(NULL);
 }
 
@@ -285,52 +349,82 @@ static void acc_task(void *arg)
 {
     uint32_t io_num = NONE_VIRTUAL_PIN;
 
-    while ((xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS)) || (currentMessage.getAck() == false) || ((telemetry_send_task_handle != NULL) || (eTaskGetState(telemetry_send_task_handle) == eRunning)) || ((idle_get_task_handle != NULL) || (eTaskGetState(idle_get_task_handle) == eRunning)))
+    xQueueReceive(gpio_evt_queue, &io_num, 0 / portTICK_PERIOD_MS);
+    // do
+    while (1)
     {
-        switch (io_num)
+        ESP_LOGI("MAIN", "io_num = %i", (int)io_num);
+        
+        switch ((int)io_num)
         {
         case MPU6050_INT_PIN:
         {
-            if (currentMessage.getProtect() == true)
+            if (currentMessage.getOpen() == false)
             {
+                // if(sim.getSleep() == true)
+                //     sim.sleepModeDisable();
+
+                /* MPU6050 update */
+                mpuParser.update();
                 /* max acceleretion exceeded, send alarm to server */
+                ESP_LOGI("MAIN", "waiting to start telemetry alarm task");
                 if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
                 { // add timer?
                     /* send telemetry */
-                    xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
-                    /* send alarm */
+                    ESP_LOGI("MAIN", "starting telemetry alarm task");
+                    if (currentMessage.getProtect() == true)
+                        xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
+                    else {
+                        ESP_LOGI("MAIN", "starting idle task");
+                        xTaskCreate(idle_get_task, "idle_get_task", 35000, NULL, 10, &idle_get_task_handle);
+                    }
+                /* send alarm */
+                    ESP_LOGI("ALARM", "max acceleretion exceeded, sending alarm to server");
+                    //TODO
 
                     xSemaphoreGive(sim_task_semaphore);
                 }
                 /* disable max acc exceeded interrupt */
-
+                // ESP_ERROR_CHECK(gpio_intr_disable(MPU6050_INT_PIN));
                 break;
             }
             else
             {
+                ESP_LOGI("MAIN", "protect is not on");
                 break;
             }
         }
         case NONE_VIRTUAL_PIN: {
             break;
         }
+        case TASK_END_VIRTUAL_PIN: {
+            break;
+        }
         default:
-        {
+        {   
+            // if(sim.getSleep() == true)
+            //     sim.sleepModeDisable();
+
+            ESP_LOGI("MAIN", "waiting to start idle task");
             if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
-            { // add timer?
+            {
                 if (currentMessage.getProtect() == true)
                     xTaskCreate(telemetry_send_task, "telemetry_send_task", 12000, NULL, 10, &telemetry_send_task_handle);
-                else
+                else {
+                    ESP_LOGI("MAIN", "starting idle task");
                     xTaskCreate(idle_get_task, "idle_get_task", 35000, NULL, 10, &idle_get_task_handle);
-
+                }
+                
                 xSemaphoreGive(sim_task_semaphore);
             }
+
+            // if(io_num == BUTTON_INT_PIN) {
+            //     ESP_ERROR_CHECK(gpio_intr_disable(BUTTON_INT_PIN));
+            // }
             break;
         }
         }
 
-        /* MPU6050 */
-        mpuParser.update();
         /* SHT30 */
         sht.update();
         /* NEO-6m */
@@ -368,6 +462,10 @@ static void acc_task(void *arg)
                     lid.setLockOpen(false);
                     if (lid.getDetectorOpen() == true)
                     {
+                        // if(sim.getSleep() == true)
+                        //     sim.sleepModeDisable();
+
+                        ESP_LOGI("ALARM", "lid should be closed, sending alarm to server");
                         /* Send alarm to server */ // TODO
                     }
                     else
@@ -440,17 +538,24 @@ static void acc_task(void *arg)
 
             xSemaphoreGive(message_update_semaphore);
         }
-
-        ESP_LOGI("MAIN", "new cycle");
-        // cycle++;
-        io_num = NONE_VIRTUAL_PIN;
         
+        io_num = NONE_VIRTUAL_PIN;
         /* if there wasnt any interrupt or lid is not open then break */
-        if(uxQueueMessagesWaiting) {
-
+        if(((uxQueueMessagesWaiting(gpio_evt_queue) > 0) || (currentMessage.getAck() == false) || ((telemetry_send_task_handle != NULL) && (eTaskGetState(telemetry_send_task_handle) != eDeleted)) || ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted))  || ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted))))
+        {
+            xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS);
+            ESP_LOGI("MAIN", "new cycle");
         }
-    }
+        else 
+        {
+            ESP_LOGI("MAIN", "exiting");
+            ESP_LOGI("MAIN", "queue size: %i", (int)uxQueueMessagesWaiting(gpio_evt_queue));
+            break;
+        }
+    } 
+    // } while ((xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS)) || (currentMessage.getAck() == false) || ((telemetry_send_task_handle != NULL) && (eTaskGetState(telemetry_send_task_handle) != eDeleted)) || ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted))  || ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted)));
 
+    ESP_LOGI("MAIN", "exited");
     // } while (currentMessage.getAck() == false);
 
     /* Disable isrs */
@@ -462,7 +567,7 @@ static void acc_task(void *arg)
     ESP_ERROR_CHECK(gpio_intr_disable(MPU6050_INT_PIN));
 
     /* Enable deep sleep */
-    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(ESP_DEEP_SLEEP_T * 10000)); // timer
+    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(ESP_DEEP_SLEEP_T * 1000)); // timer
     const uint64_t ext_wakeup_pin_1_mask = 1ULL << MPU6050_INT_PIN;
     const uint64_t ext_wakeup_pin_2_mask = 1ULL << BUTTON_INT_PIN;
 
@@ -485,6 +590,7 @@ static void acc_task(void *arg)
         ESP_ERROR_CHECK(rtc_gpio_pulldown_en(BUTTON_INT_PIN));
     }
 
+    sim.sleepModeEnable();
     // vTaskDelay(100);
     ESP_LOGI("SLEEP", "START");
     esp_deep_sleep_start();
@@ -495,11 +601,11 @@ static void sim_task(void *arg)
     if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
     {
         /* SIM800l init*/
-        if (sim.getInitStatus() != Sim800lUARTInitialised)
-        {
-            ESP_LOGI("SIM", "Starting initialization.");
-            sim.init();
-        }
+        // if (sim.getInitStatus() != Sim800lUARTInitialised)
+        // {
+        //     ESP_LOGI("SIM", "Starting initialization.");
+        //     sim.init();
+        // }
 
         Sim800lError err = Sim800lErr;
 
@@ -614,6 +720,18 @@ static void sim_task(void *arg)
         }
         ESP_LOGI("SIM", "Setting AP OK.");
 
+        // err = sim.writeSAPBR(1, 1);
+        // if(err != Sim800lOk) {
+        //     sim.resetForce();
+        //     reloadSimTask();
+        // }
+
+        // err = sim.writeSAPBR(2, 1);
+        // if(err != Sim800lOk) {
+        //     sim.resetForce();
+        //     reloadSimTask();
+        // }
+
         xSemaphoreGive(sim_task_semaphore);
     }
 
@@ -661,8 +779,8 @@ extern "C"
         conf.master.clk_speed = 400000;
         conf.clk_flags = 0;
 
-        ESP_ERROR_CHECK(i2c_param_config(MPU6050_SHT30_PIN, &conf));
-        ESP_ERROR_CHECK(i2c_driver_install(MPU6050_SHT30_PIN, I2C_MODE_MASTER, 120, 120, 0));
+        ESP_ERROR_CHECK(i2c_param_config(MPU6050_SHT30_NUM, &conf));
+        ESP_ERROR_CHECK(i2c_driver_install(MPU6050_SHT30_NUM, I2C_MODE_MASTER, 120, 120, 0));
 
         /* GPIO && GPIO int */
         const gpio_config_t config = {
@@ -680,10 +798,10 @@ extern "C"
             .pull_down_en = GPIO_PULLDOWN_DISABLE};
         gpio_config(&config1);
         gpio_set_intr_type(BUTTON_INT_PIN, (gpio_int_type_t)GPIO_INTR_POSEDGE);
-        gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+        gpio_install_isr_service(0);
         gpio_isr_handler_add(MPU6050_INT_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
-        gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
-        gpio_isr_handler_add(BUTTON_INT_PIN, gpio_isr_handler, (void*) MPU6050_INT_PIN);
+        gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void*) LID_DEFAULT_DETECTOR_PIN);
+        gpio_isr_handler_add(BUTTON_INT_PIN, gpio_isr_handler, (void*) BUTTON_INT_PIN);
 
         /* lid imer & lid timer int config */
         const esp_timer_create_args_t lid_timer_args = {
@@ -700,7 +818,10 @@ extern "C"
             .arg = (void *)send_timer,
             .name = "send-timer"};
         ESP_ERROR_CHECK(esp_timer_create(&send_timer_args, &send_timer));
+        // esp_timer_start_once(send_timer, ESP_SEND_T * 1000);                  //start counting in case programm got stuck
 
+        ESP_LOGI("SIM", "Starting initialization.");
+        sim.init();
         /* GPS init */
         gps.add(&gga);
         ESP_LOGI("GPS:", "starting");
@@ -713,18 +834,30 @@ extern "C"
         json.init();
 
         /* get reason of waking up, add task to queue */
+        wuc = esp_sleep_get_wakeup_cause();
         switch (esp_sleep_get_wakeup_cause())
         {
             /* timer wat triggered, normal behaviour */
             case ESP_SLEEP_WAKEUP_TIMER: {
                 ESP_LOGI("ESP_SLEEP", "weaken up from a timer");
-                int pin = TIMER_VIRTUAL_PIN;
-                xQueueSend(gpio_evt_queue, &pin, NULL);
+                // sim.sleepModeDisable();
+                // sim.setSleep(true);
+                esp_wake_cycle++;
+
+                ESP_LOGI("ESP_SLEEP", "cycle %i out of %i", esp_wake_cycle, ESP_SLEEP_CYCLES);
+                if(esp_wake_cycle >= ESP_SLEEP_CYCLES) {
+                        int pin = TIMER_VIRTUAL_PIN;
+                        xQueueSend(gpio_evt_queue, &pin, NULL);
+                        esp_wake_cycle = 0;
+                    }
                 break;
             }
             /* lid status was changed */
             case ESP_SLEEP_WAKEUP_EXT0: {
                 ESP_LOGI("ESP_SLEEP", "lid status was changed");
+                // sim.sleepModeDisable();
+                esp_wake_cycle = 0;
+
                 int pin = GPIO_NUM_4;
                 xQueueSend(gpio_evt_queue, &pin, NULL);
                 break;
@@ -732,33 +865,47 @@ extern "C"
             /* acceleration over max or user wants to wake up a box */
             case ESP_SLEEP_WAKEUP_EXT1: {
                 ESP_LOGI("ESP_SLEEP", "acceleration over max or user wants to wake up a box");
+                // sim.sleepModeDisable();
                 uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-                if (wakeup_pin_mask == 0) 
-                {
+                // if (wakeup_pin_mask == 0) 
+                // {
+                    
+                    
                     int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
                     printf("Wake up from a GPIO %d\n", pin);
-                    if(pin == (1ULL << MPU6050_INT_PIN))
+                    if(pin == MPU6050_INT_PIN)
                     {
+                        esp_wake_cycle = 0;
                         int pin2 = MPU6050_INT_PIN;
                         xQueueSend(gpio_evt_queue, &pin2, NULL);
                     }
-                    else if(pin == (1ULL << BUTTON_INT_PIN))
+                    else if(pin == BUTTON_INT_PIN)
                     {
+                        esp_wake_cycle = 0;
                         int pin2 = BUTTON_INT_PIN;
                         xQueueSend(gpio_evt_queue, &pin2, NULL);
                     }
-                } 
+                // } 
                 /* unknown reason */
                 else {
                     ESP_LOGI("ESP_SLEEP", "unknown reason");
-                    int pin = TIMER_VIRTUAL_PIN;
-                    xQueueSend(gpio_evt_queue, &pin, NULL);
+                    // sim.sleepModeDisable();
+                    esp_wake_cycle++;
+
+                    if(esp_wake_cycle >= ESP_SLEEP_CYCLES) {
+                        int pin = TIMER_VIRTUAL_PIN;
+                        xQueueSend(gpio_evt_queue, &pin, NULL);
+                        esp_wake_cycle = 0;
+                    }
                 }
                 break;
             }
             /* clean reset, initialize devices */
-            case ESP_SLEEP_WAKEUP_UNDEFINED: {
+            default: {// case ESP_SLEEP_WAKEUP_UNDEFINED: {
                 ESP_LOGI("ESP_SLEEP", "clean reset, initialize devices");
+                sim.setSleep(false);
+                esp_wake_cycle = 0;
+
                 int pin = TIMER_VIRTUAL_PIN;
                 xQueueSend(gpio_evt_queue, &pin, NULL);
 
@@ -786,9 +933,9 @@ extern "C"
                 break;
             }
             /* unknown reason */
-            default: {
-                ESP_LOGI("ESP_SLEEP", "unknown reason");
-            }
+            // default: {
+            //     ESP_LOGI("ESP_SLEEP", "unknown reason");
+            // }
         }
         // xTaskCreatePinnedToCore(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle, 0);
 
