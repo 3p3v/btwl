@@ -104,7 +104,7 @@ public:
                     ESP_LOGI("ESPNonVolatileMessage", "Error (%s) reading!\n", esp_err_to_name(err));
             }
 
-            ESP_LOGI("ESPNonVolatileMessage", "reading protect");
+            ESP_LOGI("ESPNonVolatileMessage", "reading open");
             temp = 0;
             err = nvs_get_u8(nvs_handle, "open", &temp);
             switch (err) {

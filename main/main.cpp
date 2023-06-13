@@ -25,9 +25,10 @@
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "nvs_flash.h"
+#include "Console.hpp"
 
 /* DEFINITIONS */
-char webAddress[] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
+char webAddress[BB_MAX_ADDRESS_LEN] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
 
 /* HANDLERS */
 TaskHandle_t sim_task_handle = NULL;
@@ -370,6 +371,7 @@ static void acc_task(void *arg)
                 ESP_LOGI("MAIN", "waiting to start telemetry alarm task");
                 if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
                 { // add timer?
+
                     /* send telemetry */
                     ESP_LOGI("MAIN", "starting telemetry alarm task");
                     if (currentMessage.getProtect() == true)
@@ -442,11 +444,13 @@ static void acc_task(void *arg)
         if (xSemaphoreTake(message_update_semaphore, portMAX_DELAY) == pdTRUE)
         {
             ESP_LOGI("LID", "checking...");
-            if (currentMessage.isSameWithAck(pendingMessage) == true && currentMessage.getAck() == true && pendingMessage.getValid() == true)
+            if (currentMessage.isSameWithAck(pendingMessage) == true && currentMessage.getAck() == true)// && pendingMessage.getValid() == true)
             {
+                ESP_LOGI("MAIN", "mesages same");
                 /* Lid must be opened */
                 if (currentMessage.getOpen() == true)
                 {
+                    ESP_LOGI("ALARM", "lid should be open");
                     if (lid.getDetectorOpen() == true)
                     {
                         lid.setLockOpen(false);
@@ -459,6 +463,7 @@ static void acc_task(void *arg)
                 /* Lid must be closed */
                 else
                 {
+                    ESP_LOGI("ALARM", "lid should be closed");
                     lid.setLockOpen(false);
                     if (lid.getDetectorOpen() == true)
                     {
@@ -590,7 +595,8 @@ static void acc_task(void *arg)
         ESP_ERROR_CHECK(rtc_gpio_pulldown_en(BUTTON_INT_PIN));
     }
 
-    sim.sleepModeEnable();
+    if(sim.getSleep() == false)
+        sim.sleepModeEnable();
     // vTaskDelay(100);
     ESP_LOGI("SLEEP", "START");
     esp_deep_sleep_start();
@@ -930,6 +936,12 @@ extern "C"
                 mpu.setMotionDetectionThreshold(2);
                 mpu.setMotionDetectionDuration(1);
                 mpu.setMotionDetectionCounterDecrement(0);
+
+                /* user console UART */
+                Console console = Console();
+                console.init();
+                console.enter();
+
                 break;
             }
             /* unknown reason */

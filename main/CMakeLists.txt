@@ -15,4 +15,5 @@ idf_component_register(SRCS "main.cpp"
                              SHT30
                              jsonData
                              lid
-                             boxMessage)
+                             boxMessage
+                             bbConsole)
