@@ -55,6 +55,8 @@
         "list": "cpp",
         "unordered_map": "cpp",
         "vector": "cpp",
-        "sleep_modes.c": "cpp"
+        "sleep_modes.c": "cpp",
+        "typeinfo": "cpp",
+        "istream": "cpp"
     }
 }

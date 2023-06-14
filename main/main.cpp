@@ -28,7 +28,7 @@
 #include "Console.hpp"
 
 /* DEFINITIONS */
-char webAddress[BB_MAX_ADDRESS_LEN] = "ec2-3-237-238-240.compute-1.amazonaws.com/boxes/176:178:28:11:21:204";
+char *webAddress;
 
 /* HANDLERS */
 TaskHandle_t sim_task_handle = NULL;
@@ -67,6 +67,8 @@ Lid lid;
 /* Messages */
 ESPNonVolatileMessage currentMessage(false, false, true);
 ServerMessage pendingMessage(false, false, true, false);
+/* Web Addres */
+BBWebAddress bbWebAddress = BBWebAddress();
 
 /* FUNCTION'S DECLARATIONS */
 static void reloadSimTask();
@@ -78,7 +80,6 @@ static void idle_get_task(void *arg);
 /* VARS */
 static bool lid_timer_on = false;
 static RTC_DATA_ATTR uint8_t esp_wake_cycle;
-esp_sleep_wakeup_cause_t wuc;
 
 /* GPIO interrupt handler */
 static void IRAM_ATTR gpio_isr_handler(void *arg)
@@ -105,7 +106,9 @@ static void lid_timer_callback(void *arg)
     if (xSemaphoreTake(message_update_semaphore, portMAX_DELAY))
     {
         currentMessage.setOpen(false);
-
+        int pin = LID_T_VIRTUAL_PIN;
+        lid_timer_on = false;
+        xQueueSendFromISR(gpio_evt_queue, &pin, NULL);
         xSemaphoreGive(message_update_semaphore);
     }
 }
@@ -158,8 +161,10 @@ static void telemetry_send_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
-        if(sim.getSleep() == true)
-                sim.sleepModeDisable();
+        if(sim.getSleep() == true) {
+            sim.sleepModeDisable();
+            sim.commonSettings();
+        }
 
         /* Make new JSON */
         char output[SIM800L_DEF_BUF_SIZE];
@@ -228,8 +233,10 @@ static void idle_get_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
-        if(sim.getSleep() == true)
-                sim.sleepModeDisable();
+        if(sim.getSleep() == true) {
+            sim.sleepModeDisable();
+            sim.commonSettings();
+        }
 
         char output[SIM800L_DEF_BUF_SIZE];
         memset(output, 0, SIM800L_DEF_BUF_SIZE);
@@ -286,8 +293,10 @@ static void ans_send_task(void *arg)
 {
     if (xSemaphoreTake(send_task_semaphore, portMAX_DELAY))
     {
-        if(sim.getSleep() == true)
-                sim.sleepModeDisable();
+        if(sim.getSleep() == true) {
+            sim.sleepModeDisable();
+            sim.commonSettings();
+        }
 
         /* Make new JSON */
         char output[SIM800L_DEF_BUF_SIZE];
@@ -402,6 +411,9 @@ static void acc_task(void *arg)
         case TASK_END_VIRTUAL_PIN: {
             break;
         }
+        case LID_T_VIRTUAL_PIN: {
+            break;
+        }
         default:
         {   
             // if(sim.getSleep() == true)
@@ -510,7 +522,7 @@ static void acc_task(void *arg)
                             {
                                 lid_timer_on = false;
                                 esp_timer_stop(lid_timer);
-                                break;
+                                // break;
                             }
                         }
                         else
@@ -520,7 +532,7 @@ static void acc_task(void *arg)
                             {
                                 lid_timer_on = true;
                                 esp_timer_start_once(lid_timer, LID_TIMER_T * 1000);
-                                break;
+                                // break;
                             }
                         }
                     }
@@ -546,10 +558,11 @@ static void acc_task(void *arg)
         
         io_num = NONE_VIRTUAL_PIN;
         /* if there wasnt any interrupt or lid is not open then break */
-        if(((uxQueueMessagesWaiting(gpio_evt_queue) > 0) || (currentMessage.getAck() == false) || ((telemetry_send_task_handle != NULL) && (eTaskGetState(telemetry_send_task_handle) != eDeleted)) || ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted))  || ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted))))
+        if(((uxQueueMessagesWaiting(gpio_evt_queue) > 0) || (currentMessage.isSameWithAck(pendingMessage) == false) || ((telemetry_send_task_handle != NULL) && (eTaskGetState(telemetry_send_task_handle) != eDeleted)) || ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted))  || ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted)) || lid_timer_on == true))
         {
             xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS);
             ESP_LOGI("MAIN", "new cycle");
+            ESP_LOGI("MAIN", "queue size: %i", (int)uxQueueMessagesWaiting(gpio_evt_queue));
         }
         else 
         {
@@ -763,6 +776,9 @@ extern "C"
 
         /* get last current message from nvs */
         currentMessage.init();
+        pendingMessage.setOpen(currentMessage.getOpen());
+        pendingMessage.setProtect(currentMessage.getProtect());
+        pendingMessage.setAck(currentMessage.getAck());
 
         /* clean up after deep sleep */
         rtc_gpio_deinit(LID_DETECTOR_PIN);
@@ -826,6 +842,7 @@ extern "C"
         ESP_ERROR_CHECK(esp_timer_create(&send_timer_args, &send_timer));
         // esp_timer_start_once(send_timer, ESP_SEND_T * 1000);                  //start counting in case programm got stuck
 
+        /* objects init */
         ESP_LOGI("SIM", "Starting initialization.");
         sim.init();
         /* GPS init */
@@ -838,14 +855,17 @@ extern "C"
         lid.setLockOpen(false);
         /* JSON init */
         json.init();
+        /* Web Address */
+        bbWebAddress.init();
+        webAddress = bbWebAddress.getWebAddress();
 
         /* get reason of waking up, add task to queue */
-        wuc = esp_sleep_get_wakeup_cause();
         switch (esp_sleep_get_wakeup_cause())
         {
-            /* timer wat triggered, normal behaviour */
+            /* timer was triggered, normal behaviour */
             case ESP_SLEEP_WAKEUP_TIMER: {
                 ESP_LOGI("ESP_SLEEP", "weaken up from a timer");
+                sim.setSleep(true);
                 // sim.sleepModeDisable();
                 // sim.setSleep(true);
                 esp_wake_cycle++;
@@ -861,6 +881,7 @@ extern "C"
             /* lid status was changed */
             case ESP_SLEEP_WAKEUP_EXT0: {
                 ESP_LOGI("ESP_SLEEP", "lid status was changed");
+                sim.setSleep(true);
                 // sim.sleepModeDisable();
                 esp_wake_cycle = 0;
 
@@ -872,6 +893,7 @@ extern "C"
             case ESP_SLEEP_WAKEUP_EXT1: {
                 ESP_LOGI("ESP_SLEEP", "acceleration over max or user wants to wake up a box");
                 // sim.sleepModeDisable();
+                sim.setSleep(true);
                 uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
                 // if (wakeup_pin_mask == 0) 
                 // {
@@ -895,6 +917,7 @@ extern "C"
                 /* unknown reason */
                 else {
                     ESP_LOGI("ESP_SLEEP", "unknown reason");
+                    sim.setSleep(true);
                     // sim.sleepModeDisable();
                     esp_wake_cycle++;
 
@@ -909,14 +932,14 @@ extern "C"
             /* clean reset, initialize devices */
             default: {// case ESP_SLEEP_WAKEUP_UNDEFINED: {
                 ESP_LOGI("ESP_SLEEP", "clean reset, initialize devices");
-                sim.setSleep(false);
+                sim.setSleep(true);
                 esp_wake_cycle = 0;
 
                 int pin = TIMER_VIRTUAL_PIN;
                 xQueueSend(gpio_evt_queue, &pin, NULL);
 
                 /* SIM init */
-                xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
+                // xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
 
                 vTaskDelay(200 / portTICK_PERIOD_MS);
 
@@ -938,9 +961,14 @@ extern "C"
                 mpu.setMotionDetectionCounterDecrement(0);
 
                 /* user console UART */
-                Console console = Console();
+                BBCredentials bbCredentials = BBCredentials();
+                bbCredentials.init();
+                Console console(&bbCredentials, &bbWebAddress);
+                // printf("%s\n", bbCredentials.getLog());
                 console.init();
-                console.enter();
+                if(console.enterConsole() == ConsoleOk)
+                    if(console.enterCredentials() == ConsoleOk)
+                        console.enterConfig();
 
                 break;
             }

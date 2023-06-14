@@ -39,3 +39,4 @@
 #define TIMER_VIRTUAL_PIN           0
 #define NONE_VIRTUAL_PIN            99
 #define TASK_END_VIRTUAL_PIN        100
+#define LID_T_VIRTUAL_PIN        101

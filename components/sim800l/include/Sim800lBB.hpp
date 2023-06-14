@@ -26,6 +26,9 @@ public:
     virtual Sim800lError deinit();
     virtual Sim800lError reinit();
 
+    /* Init in startup and after sleep */
+    virtual Sim800lError commonSettings() final;
+    
     /* AT */
     /* Check if Sim800l responds */
     virtual Sim800lError handshake() final;

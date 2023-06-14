@@ -41,6 +41,141 @@ Sim800lError Sim800lBB::reinit()
     return Sim800lError();
 }
 
+Sim800lError Sim800lBB::commonSettings()
+{
+    Sim800lError err = Sim800lErr;
+
+        /* SIM800l synchronization */
+        ESP_LOGI("SIM", "Starting synchronization.");
+        err = handshake(10);
+        if (err == Sim800lErr || err == Sim800lTimeoutErr || err == Sim800lRecErr)
+        {
+            ESP_LOGI("SIM", "Proper response wasn't received %i times. Hardware SIM800l error. Rebooting device...", 10);
+            esp_restart();
+        }
+        else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
+        {
+            ESP_LOGI("SIM", "UART perypherial error. Rebooting device...");
+            esp_restart();
+        }
+        ESP_LOGI("SIM", "Synchronization OK.");
+
+        /* SIM card check */
+        ESP_LOGI("SIM", "Checking SIM card.");
+        err = getSIMInfo();
+        if (err == Sim800lRecErr)
+        {
+            ESP_LOGI("SIM", "Sim card not inserted, cannot progress. Rebooting device...");
+            esp_restart();
+        }
+        else if (err == Sim800lTimeoutErr || err == Sim800lErr)
+        {
+            ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting device...");
+            esp_restart();
+        }
+        else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
+        {
+            ESP_LOGI("SIM", "UART perypherial error. Rebooting device...");
+            esp_restart();
+        }
+        ESP_LOGI("SIM", "SIM card OK.");
+
+        /* Network check */
+        // ESP_LOGI("SIM", "Checking if device registered to network.");
+        // for(int i = 0; i < 5; i++) {
+        //     err = checkIfRegistered();
+        //     if(err == Sim800lRegistered || err == Sim800lRoamingRegistered)
+        //         break;
+        //     else if(err == Sim800lRespErr && i < 4) {
+        //         ESP_LOGI("SIM", "Cannot register, switching on and off airplane mode.");
+        //         airplaneModeEnable();
+        //         vTaskDelay(100 / portTICK_PERIOD_MS);
+        //         airplaneModeDisable();
+        //         vTaskDelay(2000 / portTICK_PERIOD_MS);
+        //     }
+        //     else if (err == Sim800lRespErr && i < 5) {
+        //         ESP_LOGI("SIM", "Couldn't register to network %i times. Rebooting SIM800l...", 5);
+        //         resetForce();
+        //         reloadSimTask();
+        //     } else if (err == Sim800lTimeoutErr || err == Sim800lErr) {
+        //         ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
+        //         resetForce();
+        //         reloadSimTask();
+        //     } else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr) {
+        //         ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
+        //         reinit();
+        //         reloadSimTask();
+        //     }
+        // }
+
+        /* Set GPRS */
+        ESP_LOGI("SIM", "Setting GPRS.");
+        err = setConnectionType("GPRS");
+        if (err == Sim800lRecErr)
+        {
+            ESP_LOGI("SIM", "GPRS could not be set, cannot progress. Rebooting SIM800l...");
+            resetForce();
+            esp_restart();
+            // reloadSimTask();
+        }
+        else if (err == Sim800lTimeoutErr || err == Sim800lErr)
+        {
+            ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
+            resetForce();
+            esp_restart();
+            // reloadSimTask();
+        }
+        else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
+        {
+            ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
+            reinit();
+            esp_restart();
+            // reloadSimTask();
+        }
+        ESP_LOGI("SIM", "Setting GPRS OK.");
+
+        err = Sim800lErr;
+
+        /* Set AP */
+        ESP_LOGI("SIM:", "Setting AP to...");
+        err = setAccessPoint("Plus");
+        if (err == Sim800lRecErr)
+        {
+            ESP_LOGI("SIM", "AP could not be set, cannot progress. Rebooting SIM800l...");
+            resetForce();
+            esp_restart();
+            // reloadSimTask();
+        }
+        else if (err == Sim800lTimeoutErr || err == Sim800lErr)
+        {
+            ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
+            resetForce();
+            esp_restart();
+            // reloadSimTask();
+        }
+        else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
+        {
+            ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
+            reinit();
+            esp_restart();
+            // reloadSimTask();
+        }
+        ESP_LOGI("SIM", "Setting AP OK.");
+
+        return err;
+        // err = writeSAPBR(1, 1);
+        // if(err != Sim800lOk) {
+        //     resetForce();
+        //     reloadSimTask();
+        // }
+
+        // err = writeSAPBR(2, 1);
+        // if(err != Sim800lOk) {
+        //     resetForce();
+        //     reloadSimTask();
+        // }
+}
+
 Sim800lError Sim800lBB::handshake()
 {
     return execAT();
@@ -97,12 +232,12 @@ Sim800lError Sim800lBB::setAccessPoint(const char *ap)
 
 Sim800lError Sim800lBB::sendHTTPPOST(const char *url, const char * data, char * output)
 {
-    Sim800lError err;
-    // Sim800lError err = writeSAPBR(1, 1);
+    // Sim800lError err;
+    Sim800lError err = writeSAPBR(1, 1);
     // // if(err != Sim800lOk) 
     // //     return err;
 
-    // err = writeSAPBR(2, 1);
+    err = writeSAPBR(2, 1);
     // if(err != Sim800lOk)
     //     goto CON_DEINIT;
 
@@ -165,10 +300,15 @@ Sim800lError Sim800lBB::sendHTTPPOST(const char * data, char * output)
 
 Sim800lError Sim800lBB::sendHTTPGET(const char *url, char * output)
 {
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     Sim800lError err = writeSAPBR(1, 1);
+    err = writeSAPBR(1, 1);
+    err = writeSAPBR(1, 1);
     // if(err != Sim800lOk) 
     //     return err;
 
+    err = writeSAPBR(2, 1);
+    err = writeSAPBR(2, 1);
     err = writeSAPBR(2, 1);
     // if(err != Sim800lOk)
     //     goto CON_DEINIT;
@@ -192,8 +332,8 @@ Sim800lError Sim800lBB::sendHTTPGET(const char *url, char * output)
     //     goto HTTP_DEINIT;
 
     err = execHTTPREAD();
-    // if(err != Sim800lOk)
-    //     goto HTTP_DEINIT;
+    if(err != Sim800lOk)
+        goto HTTP_DEINIT;
 
     strcpy(output, receivedData);
     // memcpy(output, receivedData, receivedLen);
