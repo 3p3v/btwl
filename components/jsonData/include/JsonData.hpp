@@ -74,6 +74,8 @@ public:
 
 	JsonDataErr addMessage(Message time);
 
+	JsonDataErr addAlarm(int code);
+
 	/* Parse and return a pointer to data */
 	char* getJsonData();
 

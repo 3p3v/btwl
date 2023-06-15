@@ -125,6 +125,12 @@ JsonDataErr JsonData::addMessage(Message message)
 	return JsonDataOk;
 }
 
+JsonDataErr JsonData::addAlarm(int code)
+{
+    cJSON_AddNumberToObject(fullStats, "code", code);
+	return JsonDataOk;
+}
+
 char *JsonData::getJsonData()
 {
     // ESP_LOGI("JSON", "JSON parsed");
