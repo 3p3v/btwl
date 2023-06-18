@@ -154,8 +154,9 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     else if (gpio_num == LID_DETECTOR_PIN)
     {
         esp_wake_cycle = 0;
+        // gpio_intr_disable(LID_DETECTOR_PIN);
         // lock_accel_alarm();
-        ESP_DRAM_LOGI("GPIO_ISR", "LID_DETECTOR_PIN", (int)arg);
+        ESP_DRAM_LOGI("GPIO_ISR", "LID_DETECTOR_PIN");
     }
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
@@ -754,7 +755,8 @@ static void acc_task(void *arg)
              ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted)) ||             /* a task is running */
              ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted)) ||             /* a task is running */
              lid_timer_on == true ||                                                                              /* waiting for the lid to be closed (required to acknowledge message) */
-             lis_alarm_timer_on == true ||                                                                        /* clear alarm first */
+             lid_alarm_timer_on == true ||  
+             accel_alarm_timer_on == true ||                                                                        /* clear alarm first */
              lid_alarm_in_progress == true ||                                                                     /* acceleration was exceeded, wait and clear the flag */
              button_timer_on == true ||                                                                           /* button was pressed, wait and clear the flag */
              (!currentMessage.getOpen() && lid.getDetectorOpen())))                                               /* the box is opened while it shouldn't, have to send alarms or to clear an alarm when it's closed */
@@ -991,7 +993,7 @@ extern "C"
         send_task_semaphore = xSemaphoreCreateMutex();      // xSemaphoreCreateBinary();
         message_update_semaphore = xSemaphoreCreateMutex(); // xSemaphoreCreateBinary();
         sim_task_semaphore = xSemaphoreCreateMutex();
-        gpio_evt_queue = xQueueCreate(5, sizeof(uint32_t));
+        gpio_evt_queue = xQueueCreate(15, sizeof(uint32_t));
 
         /* I2C init */
         i2c_config_t conf;
@@ -1014,7 +1016,7 @@ extern "C"
             .pull_down_en = GPIO_PULLDOWN_DISABLE};
         gpio_config(&config);
         gpio_set_intr_type(MPU6050_INT_PIN, GPIO_INTR_NEGEDGE);
-        gpio_set_intr_type(LID_DEFAULT_DETECTOR_PIN, (gpio_int_type_t)(GPIO_INTR_NEGEDGE | GPIO_INTR_POSEDGE));
+        gpio_set_intr_type(LID_DEFAULT_DETECTOR_PIN, (gpio_int_type_t)(GPIO_INTR_ANYEDGE));
         const gpio_config_t config1 = {
             .pin_bit_mask = BIT(BUTTON_INT_PIN),
             .mode = GPIO_MODE_INPUT,
@@ -1023,9 +1025,9 @@ extern "C"
         gpio_config(&config1);
         gpio_set_intr_type(BUTTON_INT_PIN, (gpio_int_type_t)GPIO_INTR_POSEDGE);
         gpio_install_isr_service(0);
-        gpio_isr_handler_add(MPU6050_INT_PIN, gpio_isr_handler, (void *)MPU6050_INT_PIN);
+        gpio_ler_add(BUisr_handler_add(MPU6050_INT_PIN, gpio_isr_handler, (void *)MPU6050_INT_PIN);
         gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void *)LID_DEFAULT_DETECTOR_PIN);
-        gpio_isr_handler_add(BUTTON_INT_PIN, gpio_isr_handler, (void *)BUTTON_INT_PIN);
+        gpio_isr_handTTON_INT_PIN, gpio_isr_handler, (void *)BUTTON_INT_PIN);
 
         /* lid timer & lid timer int config */
         const esp_timer_create_args_t lid_timer_args = {
