@@ -25,5 +25,4 @@ Tools used by the backend are listed below:
        - cloud solution.
 
 ## Endpoints
-The communication between the application and the API is a REST standard solution, i.e. the client sends a request to a specific endpoint, the server then sends the data to the client. 
 All the endpoints can be found in [backend documentation](./resources/backend_doc_pl.pdf).
