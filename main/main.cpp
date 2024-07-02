@@ -208,14 +208,6 @@ static void button_timer_callback(void *arg)
     unlock_button();
 }
 
-/* Reload sim task */
-// static void reloadSimTask()
-// {
-//     sim_task_handle = NULL;
-//     xTaskCreate(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle);
-//     vTaskDelete(NULL);
-// }
-
 static void update_message()
 {
     if (xSemaphoreTake(message_update_semaphore, portMAX_DELAY))
@@ -755,11 +747,11 @@ static void acc_task(void *arg)
              ((idle_get_task_handle != NULL) && (eTaskGetState(idle_get_task_handle) != eDeleted)) ||             /* a task is running */
              ((ans_send_task_handle != NULL) && (eTaskGetState(ans_send_task_handle) != eDeleted)) ||             /* a task is running */
              lid_timer_on == true ||                                                                              /* waiting for the lid to be closed (required to acknowledge message) */
-             lid_alarm_timer_on == true ||  
-             accel_alarm_timer_on == true ||                                                                        /* clear alarm first */
-             lid_alarm_in_progress == true ||                                                                     /* acceleration was exceeded, wait and clear the flag */
-             button_timer_on == true ||                                                                           /* button was pressed, wait and clear the flag */
-             (!currentMessage.getOpen() && lid.getDetectorOpen())))                                               /* the box is opened while it shouldn't, have to send alarms or to clear an alarm when it's closed */
+             lid_alarm_timer_on == true ||
+             accel_alarm_timer_on == true ||                        /* clear alarm first */
+             lid_alarm_in_progress == true ||                       /* acceleration was exceeded, wait and clear the flag */
+             button_timer_on == true ||                             /* button was pressed, wait and clear the flag */
+             (!currentMessage.getOpen() && lid.getDetectorOpen()))) /* the box is opened while it shouldn't, have to send alarms or to clear an alarm when it's closed */
         {
             xQueueReceive(gpio_evt_queue, &io_num, ESP_DEEP_SLEEP_T / portTICK_PERIOD_MS);
             ESP_LOGI("MAIN", "new cycle");
@@ -818,148 +810,6 @@ static void acc_task(void *arg)
     ESP_LOGI("SLEEP", "START");
     esp_deep_sleep_start();
 }
-
-// static void sim_task(void *arg)
-// {
-//     if (xSemaphoreTake(sim_task_semaphore, portMAX_DELAY))
-//     {
-//         /* SIM800l init*/
-//         // if (sim.getInitStatus() != Sim800lUARTInitialised)
-//         // {
-//         //     ESP_LOGI("SIM", "Starting initialization.");
-//         //     sim.init();
-//         // }
-
-//         Sim800lError err = Sim800lErr;
-
-//         /* SIM800l synchronization */
-//         ESP_LOGI("SIM", "Starting synchronization.");
-//         err = sim.handshake(10);
-//         if (err == Sim800lErr || err == Sim800lTimeoutErr || err == Sim800lRecErr)
-//         {
-//             ESP_LOGI("SIM", "Proper response wasn't received %i times. Hardware SIM800l error. Rebooting device...", 10);
-//             esp_restart();
-//         }
-//         else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
-//         {
-//             ESP_LOGI("SIM", "UART perypherial error. Rebooting device...");
-//             esp_restart();
-//         }
-//         ESP_LOGI("SIM", "Synchronization OK.");
-
-//         /* SIM card check */
-//         ESP_LOGI("SIM", "Checking SIM card.");
-//         err = sim.getSIMInfo();
-//         if (err == Sim800lRecErr)
-//         {
-//             ESP_LOGI("SIM", "Sim card not inserted, cannot progress. Rebooting device...");
-//             esp_restart();
-//         }
-//         else if (err == Sim800lTimeoutErr || err == Sim800lErr)
-//         {
-//             ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting device...");
-//             esp_restart();
-//         }
-//         else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
-//         {
-//             ESP_LOGI("SIM", "UART perypherial error. Rebooting device...");
-//             esp_restart();
-//         }
-//         ESP_LOGI("SIM", "SIM card OK.");
-
-//         /* Network check */
-//         // ESP_LOGI("SIM", "Checking if device registered to network.");
-//         // for(int i = 0; i < 5; i++) {
-//         //     err = sim.checkIfRegistered();
-//         //     if(err == Sim800lRegistered || err == Sim800lRoamingRegistered)
-//         //         break;
-//         //     else if(err == Sim800lRespErr && i < 4) {
-//         //         ESP_LOGI("SIM", "Cannot register, switching on and off airplane mode.");
-//         //         sim.airplaneModeEnable();
-//         //         vTaskDelay(100 / portTICK_PERIOD_MS);
-//         //         sim.airplaneModeDisable();
-//         //         vTaskDelay(2000 / portTICK_PERIOD_MS);
-//         //     }
-//         //     else if (err == Sim800lRespErr && i < 5) {
-//         //         ESP_LOGI("SIM", "Couldn't register to network %i times. Rebooting SIM800l...", 5);
-//         //         sim.resetForce();
-//         //         reloadSimTask();
-//         //     } else if (err == Sim800lTimeoutErr || err == Sim800lErr) {
-//         //         ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
-//         //         sim.resetForce();
-//         //         reloadSimTask();
-//         //     } else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr) {
-//         //         ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
-//         //         sim.reinit();
-//         //         reloadSimTask();
-//         //     }
-//         // }
-
-//         /* Set GPRS */
-//         ESP_LOGI("SIM", "Setting GPRS.");
-//         err = sim.setConnectionType("GPRS");
-//         if (err == Sim800lRecErr)
-//         {
-//             ESP_LOGI("SIM", "GPRS could not be set, cannot progress. Rebooting SIM800l...");
-//             sim.resetForce();
-//             reloadSimTask();
-//         }
-//         else if (err == Sim800lTimeoutErr || err == Sim800lErr)
-//         {
-//             ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
-//             sim.resetForce();
-//             reloadSimTask();
-//         }
-//         else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
-//         {
-//             ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
-//             sim.reinit();
-//             reloadSimTask();
-//         }
-//         ESP_LOGI("SIM", "Setting GPRS OK.");
-
-//         err = Sim800lErr;
-
-//         /* Set AP */
-//         ESP_LOGI("SIM:", "Setting AP to...");
-//         err = sim.setAccessPoint("Plus");
-//         if (err == Sim800lRecErr)
-//         {
-//             ESP_LOGI("SIM", "AP could not be set, cannot progress. Rebooting SIM800l...");
-//             sim.resetForce();
-//             reloadSimTask();
-//         }
-//         else if (err == Sim800lTimeoutErr || err == Sim800lErr)
-//         {
-//             ESP_LOGI("SIM", "SIM800l not responding correctly. Hardware SIM800l error. Rebooting SIM800l...");
-//             sim.resetForce();
-//             reloadSimTask();
-//         }
-//         else if (err == Sim800lHardwareErr || err == Sim800lBufferFullErr)
-//         {
-//             ESP_LOGI("SIM", "UART perypherial error. Restarting UART...");
-//             sim.reinit();
-//             reloadSimTask();
-//         }
-//         ESP_LOGI("SIM", "Setting AP OK.");
-
-//         // err = sim.writeSAPBR(1, 1);
-//         // if(err != Sim800lOk) {
-//         //     sim.resetForce();
-//         //     reloadSimTask();
-//         // }
-
-//         // err = sim.writeSAPBR(2, 1);
-//         // if(err != Sim800lOk) {
-//         //     sim.resetForce();
-//         //     reloadSimTask();
-//         // }
-
-//         xSemaphoreGive(sim_task_semaphore);
-//     }
-
-//     vTaskDelete(sim_task_handle);
-// }
 
 #ifdef __cplusplus
 extern "C"
@@ -1026,8 +876,8 @@ extern "C"
         gpio_set_intr_type(BUTTON_INT_PIN, (gpio_int_type_t)GPIO_INTR_POSEDGE);
         gpio_install_isr_service(0);
         gpio_ler_add(BUisr_handler_add(MPU6050_INT_PIN, gpio_isr_handler, (void *)MPU6050_INT_PIN);
-        gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void *)LID_DEFAULT_DETECTOR_PIN);
-        gpio_isr_handTTON_INT_PIN, gpio_isr_handler, (void *)BUTTON_INT_PIN);
+                     gpio_isr_handler_add(LID_DEFAULT_DETECTOR_PIN, gpio_isr_handler, (void *)LID_DEFAULT_DETECTOR_PIN);
+                     gpio_isr_handTTON_INT_PIN, gpio_isr_handler, (void *)BUTTON_INT_PIN);
 
         /* lid timer & lid timer int config */
         const esp_timer_create_args_t lid_timer_args = {
@@ -1185,12 +1035,7 @@ extern "C"
 
             break;
         }
-            /* unknown reason */
-            // default: {
-            //     ESP_LOGI("ESP_SLEEP", "unknown reason");
-            // }
         }
-        // xTaskCreatePinnedToCore(sim_task, "sim_task", 12000, NULL, 10, &sim_task_handle, 0);
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         /* start main */
