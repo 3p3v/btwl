@@ -17,13 +17,13 @@ Full documentation can be found in [backend documentation](./resources/backend_d
 ## Tools
 Tools used by the backend are listed below:
 1. API framework:
-- Spring Boot:
-    - framework for developing applications,
-    - programming language: Java,
+   - Spring Boot:
+       - framework for developing applications,
+       - programming language: Java,
 2. Database:
-- MongoDB database:
-    - non-relational database,
-    - cloud solution.
+   - MongoDB database:
+       - non-relational database,
+       - cloud solution.
 
 ## Endpoints
 The communication between the application and the API is a REST standard solution, i.e. the client sends a request to a specific endpoint, the server then sends the data to the client. 
