@@ -11,7 +11,7 @@ All requests use JSON format.
 ![Components communication diagram](./resources/comm_diag.jpg).
 
 Full documentation can be found in [backend documentation](./resources/backend_doc_pl.pdf).
-Original repository can be found [here](https://github.com/dominicus28/BTWL/tree/backend).
+The original repository can be found [here](https://github.com/dominicus28/BTWL/tree/backend).
 
 ## Tools
 Tools used by the backend are listed below:
